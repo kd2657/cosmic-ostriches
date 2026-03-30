@@ -78,3 +78,26 @@ The heavy lifting will occur in the **FastAPI** backend using Python.
 3.  Write the FastAPI Python endpoints tying the ML pipeline together.
 4.  Wire the frontend Search Page to hit the backend, compute the ML results, and plot them interactively on the Clustering Page.
 5.  Populate the root `README.md` with the requested repository diagram and logical 5-person team division.
+
+---
+
+## 5. Phase 2 Enhancements
+
+### A. Resource Tracker Error Fix
+*   The `resource_tracker: leaked semaphore objects` warning during Uvicorn shutdown (caused by underlying scikit-learn/joblib threadpools from HDBSCAN/UMAP) will be resolved by gracefully patching the warnings or explicitly closing the multiprocessing tracker on `SIGTERM`.
+
+### B. Cosmetic & UI Upgrades
+*   **Legend Sizing & Noise Ordering:** The Plotly configuration in `/cluster` will be updated to uniformly push the "Noise" (`-1`) trace to the bottom of the legend and significantly increase the legend font size for readability.
+*   **Home Page Feed:** The `/` page will be decoupled from instant clustering. Instead, it will feature an interim feed state:
+    *   It will query a new backend endpoint to fetch articles and embed them.
+    *   It will rapidly calculate the **Cosine Similarity** between the target search query vector and the article vectors to display a dynamic "Matching Percentage."
+    *   It will display a stylized vertical list of these headlines + descriptions.
+    *   A prominent "Cluster Narratives" button will then bridge the user to the `/cluster` visualization.
+
+### C. AI Cluster Summarization
+*   **Dynamic Narratives:** Once the user calculates their clusters (e.g., K-Means $k=3$), the backend will map the article bodies in each cluster and generate a brief 1-2 sentence AI summary of the narrative structure.
+*   **Implementation Path:** To remain compliant with strict free-tier/local-execution constraints, the system will execute entirely offline using a lightweight sequence-to-sequence local NLP model (`google/flan-t5-small`) via the HuggingFace `pipeline`. This will run purely on the local CPU alongside `sentence-transformers`.
+
+### D. Source Mapping & Generation Strictness (Phase 2.5)
+*   **Narrative Sourcing:** Following UI rendering, the system dynamically iterates the datapoints to build a Set of unique journalistic sources (e.g., *BBC News, Reuters*) corresponding to each narrative cluster, explicitly exposing the underlying publisher-bias driving a group's logic.
+*   **LLM Output Truncation:** To enforce strict analytical constraints against the free-tier Causal LM generation quirks, the raw sequence-output is parsed directly at the UI layer to explicitly terminate at the very first full period character (`.`).
