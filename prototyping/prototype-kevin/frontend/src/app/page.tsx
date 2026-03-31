@@ -111,7 +111,32 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [articles, setArticles] = useState<any[]>([]);
   const [searchedQuery, setSearchedQuery] = useState("");
+  const [isOfflineCache, setIsOfflineCache] = useState(false);
+  const [backendReady, setBackendReady] = useState(false);
   const router = useRouter();
+
+  useEffect(() => {
+    const checkHealth = async () => {
+      try {
+        const res = await fetch("http://localhost:8000/health");
+        if (res.ok) {
+          setBackendReady(true);
+        } else {
+          setTimeout(checkHealth, 1000);
+        }
+      } catch (e) {
+        setTimeout(checkHealth, 1000);
+      }
+    };
+    checkHealth();
+  }, []);
+  
+  useEffect(() => {
+    if (isOfflineCache) {
+      const timer = setTimeout(() => setIsOfflineCache(false), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [isOfflineCache]);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -127,6 +152,7 @@ export default function Home() {
       if (!res.ok) throw new Error("Fetch failed");
       const json = await res.json();
       setArticles(json.articles || []);
+      setIsOfflineCache(json.is_offline_cache || false);
       setSearchedQuery(query);
     } catch (err) {
       console.error(err);
@@ -138,6 +164,15 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-neutral-950 flex flex-col items-center py-20 px-4 relative overflow-hidden">
       <BackgroundBlobs />
+
+      {isOfflineCache && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-top-4 fade-in duration-400">
+          <div className="bg-yellow-950 border border-yellow-700 text-yellow-500 px-4 py-2 rounded-full shadow-2xl text-sm flex items-center gap-3 whitespace-nowrap font-medium pointer-events-auto">
+            <span className="flex h-2 w-2 rounded-full bg-yellow-500 animate-pulse shrink-0 shadow-[0_0_8px_rgba(234,179,8,1)]"></span>
+            NewsAPI Limit Reached. Displaying locally cached vector-matches.
+          </div>
+        </div>
+      )}
 
       <div className={`z-10 w-full max-w-3xl text-center space-y-8 transition-all duration-500 ${articles.length > 0 ? 'mt-0' : 'mt-[20vh]'}`}>
         <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight text-white mb-4">
@@ -155,16 +190,17 @@ export default function Home() {
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="e.g. Artificial Intelligence, Global Economy..."
-              className="w-full pl-6 pr-32 py-4 bg-neutral-900/80 border border-neutral-800 rounded-2xl text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-lg shadow-xl backdrop-blur-sm"
-              disabled={loading}
+              placeholder={backendReady ? "e.g. Artificial Intelligence, Global Economy..." : "Warming up AI vector models..."}
+              className="w-full pl-6 pr-32 py-4 bg-neutral-900/80 border border-neutral-800 rounded-2xl text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-lg shadow-xl backdrop-blur-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={loading || !backendReady}
             />
             <button
               type="submit"
-              disabled={loading || !query.trim()}
+              disabled={loading || !query.trim() || !backendReady}
               className="absolute right-2 px-6 py-2 bg-white text-black font-semibold rounded-xl hover:bg-neutral-200 transition-colors disabled:opacity-50 flex items-center gap-2 cursor-pointer"
             >
-              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Search"}
+              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 
+               !backendReady ? <Loader2 className="w-5 h-5 animate-spin" /> : "Search"}
             </button>
           </div>
         </form>

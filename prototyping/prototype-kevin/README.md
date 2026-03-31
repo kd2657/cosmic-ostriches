@@ -1,85 +1,134 @@
 # The Local Minima
 
-A proof-of-concept for an interactive "**News Narrative Explorer**" designed to fetch, vectorize, reduce, and dynamically cluster the complex narratives hidden behind today's global news logic. The Local Minima is a full-stack Next.js and FastAPI application that fetches live articles from NewsAPI, mathematically embeds them locally using HuggingFace `sentence-transformers`, and automatically clusters them using algorithms like HDBSCAN and K-Means. It dynamically calculates cosine-similarity scores to populate localized Article Feeds, and utilizes a lightweight local LLM (`distilgpt2`) to automatically summarize abstract news narratives into single intuitive sentences.
+A proof-of-concept **News Narrative Explorer** that fetches, vectorizes, reduces, and dynamically clusters the hidden semantic structure behind today's global news. Built as a full-stack Next.js + FastAPI application, it pulls live articles from NewsAPI, embeds them locally using HuggingFace `sentence-transformers`, clusters them with a suite of algorithms, and generates AI-powered narrative summaries via Google Gemini.
 
 ## ✨ Core Features
 
-*   **Live Cosine-Similarity Article Feed:** Searches are decoupled from automatic clustering. Fetching a topic downloads live articles and performs a mathematical Cosine Similarity matrix check against the query, exposing exact "Match Percentage" scores before the user decides to cluster.
-*   **Mathematical Narrative Clustering:** Translates the raw text of complex geopolitical news logic into a 2-Dimensional Plotly graph, isolating groups of text by their semantic closeness rather than explicit keyword tagging.
-*   **Zero-Cost Local AI Summarization:** Bypasses expensive OpenAI API calls by passing the clustered headline arrays explicitly into a lightweight, local sequence-to-sequence model (`distilgpt2`) via HuggingFace's `pipeline` to dynamically generate a 1-sentence narrative summary describing the logic driving a specific cluster.
-*   **Media Publisher Source Mapping:** Explicitly iterates across the embedded datasets to reconstruct and list the precise media outlets (e.g., *BBC News, Reuters*) comprising each narrative bias, ensuring source-level transparency. 
+*   **Live Cosine-Similarity Article Feed:** Searches are decoupled from clustering. Fetching a topic downloads live articles and performs a mathematical Cosine Similarity matrix check against the query, exposing exact "Match Percentage" scores before the user decides to cluster.
+*   **Multi-Algorithm Narrative Clustering:** Translates the raw text of complex news into a 2D Plotly scatter plot by semantic closeness. Supports **HDBSCAN** (auto-detect), **K-Means** (custom from-scratch implementation), **GMM**, **Agglomerative**, and **Affinity Propagation**.
+*   **Flexible Dimensionality Reduction:** Choose between **UMAP** (global structure), **t-SNE** (local density), and **PCA** (custom from-scratch SVD implementation) for the 2D projection.
+*   **Hybrid AI Narrative Summaries:** Uses Google **Gemini 2.5 Flash** (free tier) to generate paragraph-length cluster summaries in a single batched API call. Gracefully falls back to a local `distilgpt2` pipeline if no key is configured or the quota is exhausted — with a visible "Local Summary Only" badge in the UI.
+*   **Offline Vector Caching:** All fetched articles are persistently embedded and stored in a local **ChromaDB** vector database. If the NewsAPI quota is exhausted, the system automatically falls back to semantically searching the local cache — with a visible animated warning banner in the UI.
+*   **Media Publisher Source Mapping:** Lists the precise media outlets (e.g., *BBC News, Reuters*) comprising each narrative cluster for source-level transparency.
+*   **Backend-Ready UI Gating:** The search input is automatically disabled with a "Warming up AI vector models..." placeholder until the Python backend finishes loading its ML models — preventing premature fetch errors.
 
 ## 📁 Repository Structure
 
 ```text
-prototype-kevin/               # Project Root
-├── project-protoype-planning/ # Comprehensive Planning Documents & Research
-│   ├── outline.md             
-│   ├── research.md            
-│   ├── constraints.md         
-│   └── prototype-planning.md  
-├── Implementation.md          
-├── start.sh                   # Native Application Bootstrapper
-├── backend/                   # Python FastAPI Machine Learning Pipeline
-│   ├── .venv/                 # uv-managed virtual environment
-│   ├── chroma_db/             # Local ChromaDB persistent vector storage
-│   ├── main.py                # FastAPI endpoints & CORS orchestration
-│   ├── api.py                 # NewsAPI.org data retrieval
-│   ├── ml.py                  # Embedding, Reduction, Clustering, and Local LLM Pipeline
-│   └── requirements.txt       # Frozen PyPI dependencies
-└── frontend/                  # Next.js React Application
-    ├── public/                # Static assets
+prototype-kevin/                 # Project Root
+├── project-protoype-planning/   # Planning Documents & Research
+│   ├── outline.md
+│   ├── research.md
+│   ├── constraints.md
+│   └── prototype-planning.md
+├── Implementation.md            # Technical implementation log
+├── start.sh                     # One-command application bootstrapper
+├── backend/                     # Python FastAPI + ML Pipeline
+│   ├── .env                     # Your local secrets (do NOT commit)
+│   ├── .env.example             # Template for required environment variables
+│   ├── .venv/                   # uv-managed virtual environment
+│   ├── chroma_db/               # Local ChromaDB persistent vector storage
+│   ├── main.py                  # FastAPI endpoints & CORS orchestration
+│   ├── api.py                   # NewsAPI.org data retrieval
+│   ├── ml.py                    # Embedding, Reduction, Clustering & LLM Pipeline
+│   └── requirements.txt         # Frozen PyPI dependencies
+└── frontend/                    # Next.js React Application
+    ├── public/                  # Static assets
     ├── src/app/
-    │   ├── page.tsx           # Home Page (Cosine Similarity Feed & Physics Engine)
-    │   ├── globals.css        # Tailwind directives
-    │   ├── layout.tsx         # Next.js Application wrapper
-    │   └── cluster/page.tsx   # Visual Clustering Results (Plotly.js + AI Subtext)
-    ├── package.json           # Node.js dependencies
-    └── tailwind.config.ts     # Styling Configuration
+    │   ├── page.tsx             # Home Page (Cosine Similarity Feed & Physics Engine)
+    │   ├── globals.css          # Global styles
+    │   ├── layout.tsx           # Next.js Application wrapper
+    │   └── cluster/page.tsx     # Visual Clustering Dashboard (Plotly.js + AI Summaries)
+    ├── package.json             # Node.js dependencies
+    └── tailwind.config.ts       # Styling Configuration
 ```
 
 ## 🚀 How to Run
 
-Because the architecture decouples the frontend logic from the backend machine learning compute, both servers must be running simultaneously.
+### Prerequisites (First-Time Setup)
 
-### 1. API Configuration
-1. Register for an educational/developer key at [NewsAPI.org](https://newsapi.org).
-2. Create an environment file: `cp backend/.env.example backend/.env`
-3. Paste your key into `backend/.env`.
+> [!IMPORTANT]
+> Complete these steps once before running for the first time.
 
-### 2. The Easy Way (Startup Script)
-Simply execute the provided terminal runner. It will load your API key, activate the virtual environment, start both the React interface and Python pipeline simultaneously, and shut them cleanly when you type `Ctrl+C`.
+**1. Install system dependencies**
+- [Python 3.11+](https://www.python.org/downloads/)
+- [Node.js 18+](https://nodejs.org/) (includes `npm`)
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) — the Python package manager used by this project:
+  ```bash
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  ```
+
+**2. Set up the Python virtual environment**
 ```bash
-./start.sh
+cd backend
+uv venv .venv
+source .venv/bin/activate
+uv pip install -r requirements.txt
 ```
 
-### 3. The Manual Way
-If you prefer isolated terminals:
-*   **Backend:** `cd backend && source .venv/bin/activate && export $(grep -v '^#' .env | xargs) && uvicorn main:app --reload`
-*   **Frontend:** `cd frontend && npm run dev`
+**3. Install frontend dependencies**
+```bash
+cd frontend
+npm install
+```
+
+**4. Configure API keys**
+```bash
+cp backend/.env.example backend/.env
+```
+Then open `backend/.env` and fill in your keys (see table below).
+
+| Variable | Required | Where to get it |
+|---|---|---|
+| `NEWSAPI_KEY` | ✅ Yes | Free key at [newsapi.org](https://newsapi.org) |
+| `GEMINI_API_KEY` | ⚪ Optional | Free key at [aistudio.google.com](https://aistudio.google.com) — enables AI summaries |
+
+> [!NOTE]
+> Without a `GEMINI_API_KEY`, the app still runs fully — it falls back to the local `distilgpt2` summarizer and shows a "Local Summary Only" badge.
 
 ---
 
-## 👥 Proposed Division of Labor (5 Students)
+### Running the App
 
-Because the project fuses modern web technologies with heavy natural language processing (NLP), the labor is horizontally distributed so that all five students contribute significantly to the Machine Learning logic while simultaneously owning a distinct layer of the full-stack architecture.
+**The easy way (recommended):** Run both servers with a single command from the project root:
+```bash
+./start.sh
+```
+This loads your `.env`, activates the virtual environment, starts both servers simultaneously, and shuts them down cleanly on `Ctrl+C`.
 
-### Student 1: Machine Learning & Frontend UX
-*   **Machine Learning:** Fine-tuning the dimensionality reduction (UMAP) logic to properly spread visual outliers, ensuring the arrays graph intuitively.
-*   **Architecture:** Lead the Next.js foundation, manage the Plotly data rendering pipeline, and style the 2D cluster maps and interactive physics layouts.
+**The manual way** (if you prefer isolated terminals):
+```bash
+# Terminal 1 — Backend
+cd backend && source .venv/bin/activate && export $(grep -v '^#' .env | xargs) && uvicorn main:app --reload
 
-### Student 2: Machine Learning & Backend API Orchestration
-*   **Machine Learning:** Experiment with the optimal clustering algorithms (HDBSCAN vs K-Means) and analyze parameter thresholds (e.g. `min_cluster_size`).
-*   **Architecture:** Maintain the core Python FastAPI integration, structured error fallback, CORS middleware, and handle all asynchronous payload distribution to the Javascript client.
+# Terminal 2 — Frontend
+cd frontend && npm run dev
+```
 
-### Student 3: Machine Learning & Vector Infrastructure
-*   **Machine Learning:** Manage the Python `sentence-transformers` vectorization pipeline, specifically dealing with tokenization, document embeddings, and the exact vector dimensions (`384` for `MiniLM`).
-*   **Architecture:** Own the setup, schema, and raw data queries for `ChromaDB` to ensure historical vectors aren't redundantly cached, acting as the primary data safety buffer.
+Once both are running, open **http://localhost:3000** in your browser.
 
-### Student 4: Machine Learning & External Integrations
-*   **Machine Learning:** Establish the raw mathematical evaluation logic, calculating the exact PyTorch Cosine Similarity matrix representing the distance between a raw Search Query and the historical Embeddings.
-*   **Architecture:** Handle the direct integration with NewsAPI.org (including API key abstraction, pagination requests, and structural alignment for the ML layer).
+---
 
-### Student 5: Machine Learning & Local AI NLP
-*   **Machine Learning:** Architect the local HuggingFace `pipeline` inference logic, selecting and optimizing lightweight open-source large language models (e.g., `distilgpt2`) to execute directly on the server's CPU.
-*   **Architecture:** Implement the strict natural language truncation parsing inside the frontend loops to effectively cap and format the local LLM generation strings securely within the UI constraints.
+## 👥 Division of Labor (5 Students)
+
+All five students contribute to the shared Machine Learning core while owning a distinct layer of the full-stack architecture.
+
+### Student 1: ML & Frontend UX
+*   **Machine Learning:** Fine-tuning dimensionality reduction algorithms (UMAP, t-SNE, PCA) to ensure semantic clusters render intuitively in 2D space.
+*   **Architecture:** Lead the Next.js foundation, manage the Plotly data rendering pipeline, and style the cluster maps, interactive physics particle layouts, and all animated UI components.
+
+### Student 2: ML & Backend API Orchestration
+*   **Machine Learning:** Experiment with and tune the full clustering suite — HDBSCAN sensitivity (`min_cluster_size`, `min_samples`), K-Means convergence logic, and Agglomerative distance thresholds.
+*   **Architecture:** Maintain the FastAPI integration layer, structured error fallback chains, CORS middleware, and the `is_offline_cache` status propagation to the frontend.
+
+### Student 3: ML & Vector Infrastructure
+*   **Machine Learning:** Manage the `sentence-transformers` embedding pipeline — tokenization, `all-MiniLM-L6-v2` model configuration, and vector dimensionality (`384-dim`).
+*   **Architecture:** Own the ChromaDB schema, persistent vector storage, semantic fallback queries, and the cosine-similarity scoring system against search queries.
+
+### Student 4: ML & External Integrations
+*   **Machine Learning:** Build and evaluate the from-scratch Custom K-Means (Lloyd's algorithm via NumPy broadcasting) and Custom PCA (SVD-based decomposition) implementations.
+*   **Architecture:** Handle the NewsAPI.org integration — API key abstraction, request pagination, error handling, and structural article normalization for the ML layer.
+
+### Student 5: ML & AI Summarization
+*   **Machine Learning:** Architect the hybrid AI summarization pipeline — Gemini 2.5 Flash batched JSON inference, dynamic token budget scaling, and the local `distilgpt2` offline fallback.
+*   **Architecture:** Implement the frontend summary rendering, "Local Summary Only" badge logic, UI backend-readiness health polling, and the auto-dismissing offline cache warning banner.

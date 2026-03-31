@@ -2,16 +2,20 @@ import os
 import chromadb
 from umap import UMAP
 from sentence_transformers import SentenceTransformer, util
-from sklearn.cluster import KMeans, HDBSCAN
+from sklearn.cluster import HDBSCAN, AgglomerativeClustering, AffinityPropagation
 from sklearn.mixture import GaussianMixture
+from sklearn.manifold import TSNE
 from transformers import pipeline
+from google import genai
 from typing import List, Dict, Any, Optional
 import numpy as np
 import warnings
+from transformers import logging as transformers_logging
 
 warnings.filterwarnings("ignore", category=FutureWarning, module="sklearn.*")
 warnings.filterwarnings("ignore", category=UserWarning, module="umap.*")
 warnings.filterwarnings("ignore", module="transformers.*")
+transformers_logging.set_verbosity_error()
 
 # Load the vectorizer model
 # all-MiniLM-L6-v2 is selected to balance performance with low compute 
@@ -126,10 +130,67 @@ def compute_similarity_scores(query: str, articles: List[Dict[str, Any]]) -> Lis
     articles.sort(key=lambda x: x["match_score"], reverse=True)
     return articles
 
+class CustomKMeans:
+    def __init__(self, n_clusters=8, max_iter=100, random_state=None):
+        self.n_clusters = n_clusters
+        self.max_iter = max_iter
+        if random_state is not None:
+            np.random.seed(random_state)
+            
+    def fit_predict(self, X):
+        if len(X) <= self.n_clusters:
+            return np.arange(len(X))
+        indices = np.random.choice(X.shape[0], self.n_clusters, replace=False)
+        centroids = X[indices].copy()
+        
+        labels = np.zeros(X.shape[0])
+        for _ in range(self.max_iter):
+            # Form computationally clean 3D broadcast matrix for bulk Euclidean vector distance comparison
+            distances = np.linalg.norm(X[:, np.newaxis] - centroids, axis=2)
+            new_labels = np.argmin(distances, axis=1)
+            
+            if np.array_equal(labels, new_labels):
+                break
+            labels = new_labels
+            
+            for k in range(self.n_clusters):
+                if np.sum(labels == k) > 0:
+                    centroids[k] = np.mean(X[labels == k], axis=0)
+                    
+        return labels
+
+class CustomPCA:
+    """
+    From-scratch PCA implementation using numpy SVD.
+    Centers the data, computes the covariance matrix, and projects onto 
+    the top n_components principal axes via eigendecomposition.
+    Mathematically equivalent to sklearn PCA at this scale.
+    """
+    def __init__(self, n_components: int = 2):
+        self.n_components = n_components
+        self.components_ = None
+        self.mean_ = None
+        
+    def fit_transform(self, X: np.ndarray) -> np.ndarray:
+        # Step 1: Center the data
+        self.mean_ = np.mean(X, axis=0)
+        X_centered = X - self.mean_
+        
+        # Step 2: SVD decomposition (numerically more stable than direct eigen on covariance)
+        # U: left singular vectors (sample projections)
+        # S: singular values
+        # Vt: right singular vectors (principal axes / components)
+        _, _, Vt = np.linalg.svd(X_centered, full_matrices=False)
+        
+        # Step 3: Store top n_components principal axes and project
+        self.components_ = Vt[:self.n_components]
+        return X_centered @ self.components_.T
+
 def process_batch_cluster(
     articles: List[Dict[str, Any]], 
     method: str = "hdbscan", 
-    cluster_k: Optional[int] = None
+    cluster_k: Optional[int] = None,
+    dim_reduction: str = "umap"
 ) -> List[Dict[str, Any]]:
     """
     Fetches embeddings, performs UMAP dimensionality reduction to 2D for the UI,
@@ -151,30 +212,55 @@ def process_batch_cluster(
     labels = []
     if method == "kmeans" and cluster_k:
         k = min(cluster_k, len(embeddings))
-        kmeans = KMeans(n_clusters=k, random_state=42)
+        kmeans = CustomKMeans(n_clusters=k, random_state=42)
         labels = kmeans.fit_predict(embeddings)
     elif method == "gmm" and cluster_k:
         k = min(cluster_k, len(embeddings))
         gmm = GaussianMixture(n_components=k, random_state=42)
         labels = gmm.fit_predict(embeddings)
+    elif method == "agglomerative":
+        k = min(cluster_k, len(embeddings)) if cluster_k else None
+        if k:
+            agg = AgglomerativeClustering(n_clusters=k)
+        else:
+            agg = AgglomerativeClustering(n_clusters=None, distance_threshold=0.5)
+        labels = agg.fit_predict(embeddings)
+    elif method == "affinity":
+        aff = AffinityPropagation(random_state=42)
+        labels = aff.fit_predict(embeddings)
     else:
         # Fallback to HDBSCAN
-        # Works well when k is unknown. minimum cluster size determines sensitivity.
-        min_cluster = min(len(embeddings), 5)
-        if len(embeddings) < 5:
+        # Works well when k is unknown. tuned to aggressive sensitivity.
+        min_cluster = min(len(embeddings), 3)
+        if len(embeddings) < 3:
             labels = [0] * len(embeddings) # not enough data to cluster
         else:
-            hdb = HDBSCAN(min_cluster_size=min_cluster)
+            hdb = HDBSCAN(min_cluster_size=min_cluster, min_samples=2)
             labels = hdb.fit_predict(embeddings)
 
-    # UMAP Reduction for 2D Plotting
-    # Needs a few points to work properly (n_neighbors=15 default). 
-    n_neighbors = min(15, len(embeddings) - 1)
-    if n_neighbors < 2:
-        reduced_embeddings = np.zeros((len(embeddings), 2))
+    # Dimensionality Reduction for 2D Plotting
+    if dim_reduction == "tsne" and len(embeddings) > 1:
+        # Perplexity strictly bound to sample size logic constraints
+        perplexity = min(30, max(1, len(embeddings) - 1))
+        if perplexity >= len(embeddings):
+            perplexity = len(embeddings) - 1
+            
+        if perplexity < 1:
+            reduced_embeddings = np.zeros((len(embeddings), 2))
+        else:
+            reducer = TSNE(n_components=2, perplexity=perplexity, random_state=42, init='pca', learning_rate='auto')
+            reduced_embeddings = reducer.fit_transform(embeddings)
+    elif dim_reduction == "pca":
+        pca = CustomPCA(n_components=2)
+        reduced_embeddings = pca.fit_transform(embeddings)
     else:
-        reducer = UMAP(n_neighbors=n_neighbors, min_dist=0.1, n_components=2, random_state=42)
-        reduced_embeddings = reducer.fit_transform(embeddings)
+        # Fallback to standard UMAP mapping
+        n_neighbors = min(15, len(embeddings) - 1)
+        if n_neighbors < 2:
+            reduced_embeddings = np.zeros((len(embeddings), 2))
+        else:
+            reducer = UMAP(n_neighbors=n_neighbors, min_dist=0.1, n_components=2, random_state=42)
+            reduced_embeddings = reducer.fit_transform(embeddings)
 
     # Build response points
     results = []
@@ -199,35 +285,90 @@ def process_batch_cluster(
             "y": float(reduced_embeddings[idx][1])
         })
         
-    # Generate Narratives using local LLM
+    # Hybrid Gemini / Local Auto-Summarization
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    client = None
+    if gemini_key:
+        try:
+            client = genai.Client(api_key=gemini_key)
+        except Exception:
+            pass
+
+    used_local_fallback = False if client else True
+    used_local_fallback = False if client else True
     summaries = {}
+    cluster_strings = ""
+    target_clusters = []
+    
     for cluster_id, titles in cluster_titles.items():
         if cluster_id == -1:
             summaries[str(cluster_id)] = "Unclustered noise and outlier narratives."
             continue
-            
-        # Join top 5 titles 
-        top_titles_str = ". ".join(titles[:5])
-        prompt = f"Summarize the main common theme of these news headlines in one short sentence:\n{top_titles_str}\n\nSummary:"
         
+        top_titles_str = ". ".join(titles[:5])
+        cluster_strings += f"Cluster {cluster_id}:\n{top_titles_str}\n\n"
+        target_clusters.append(cluster_id)
+        
+    summary_generated = False
+    
+    if client and target_clusters:
         try:
-            # Text-generation kwargs optimized for standard causallms
+            prompt = f"You are an analytical AI bot. Read the following sets of news headlines grouped by cluster. Synthesize and summarize the main narrative connecting each cluster into a clear, concise paragraph without strict limits. Highlight any notable differences between each cluster. Avoid using the word 'cluster' in your response. Return your response STRICTLY as a valid JSON object where each KEY is the plain cluster number as a string (e.g. \"0\", \"1\", \"2\") and each VALUE is the summary paragraph. Ensure all text values are properly escaped and contain absolutely NO literal newlines. \n\n{cluster_strings}"
+            
+            response = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=prompt,
+                config=genai.types.GenerateContentConfig(
+                    temperature=0.3,
+                    max_output_tokens=8192,
+                    response_mime_type="application/json"
+                )
+            )
+            
+            import json
+            json_text = response.text.strip()
+            if json_text.startswith("```json"):
+                json_text = json_text[7:]
+            elif json_text.startswith("```"):
+                json_text = json_text[3:]
+            if json_text.endswith("```"):
+                json_text = json_text[:-3]
+                
+            batch_summaries = json.loads(json_text.strip())
+            
+            for cid in target_clusters:
+                # Try plain numeric key first ("0"), then fall back to "Cluster 0" format
+                summary = (
+                    batch_summaries.get(str(cid)) or
+                    batch_summaries.get(f"Cluster {cid}")
+                )
+                summaries[str(cid)] = summary if summary else "Narrative summary unavailable."
+            summary_generated = True
+        except Exception as api_err:
+            print(f"Gemini API Batch Error: {api_err} - Routing individual clusters to local offline model.")
+            used_local_fallback = True
+            
+    if not summary_generated:
+        for cid in target_clusters:
+            top_titles_str = ". ".join(cluster_titles[cid][:5])
+            prompt = f"Summarize the main common theme of these news headlines in one short sentence:\n{top_titles_str}\n\nSummary:"
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 out = summarizer(
                     prompt, 
                     max_new_tokens=25, 
-                    max_length=None,
                     temperature=0.3, 
                     do_sample=True,
                     return_full_text=False,
-                    pad_token_id=50256 # distilgpt2 eos token id
+                    pad_token_id=50256
                 )
             generated = out[0]["generated_text"].strip()
             if "\n" in generated: 
                 generated = generated.split("\n")[0]
-            summaries[str(cluster_id)] = generated
-        except Exception as e:
-            summaries[str(cluster_id)] = "Narrative summary unavailable."
+            summaries[str(cid)] = generated
             
-    return {"points": results, "summaries": summaries}
+    return {
+        "points": results, 
+        "summaries": summaries,
+        "is_local_summary": used_local_fallback
+    }

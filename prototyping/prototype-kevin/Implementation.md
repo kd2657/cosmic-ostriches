@@ -81,7 +81,7 @@ The heavy lifting will occur in the **FastAPI** backend using Python.
 
 ---
 
-## 5. Phase 2 Enhancements
+## 5. Enhancements
 
 ### A. Resource Tracker Error Fix
 *   The `resource_tracker: leaked semaphore objects` warning during Uvicorn shutdown (caused by underlying scikit-learn/joblib threadpools from HDBSCAN/UMAP) will be resolved by gracefully patching the warnings or explicitly closing the multiprocessing tracker on `SIGTERM`.
@@ -101,3 +101,15 @@ The heavy lifting will occur in the **FastAPI** backend using Python.
 ### D. Source Mapping & Generation Strictness (Phase 2.5)
 *   **Narrative Sourcing:** Following UI rendering, the system dynamically iterates the datapoints to build a Set of unique journalistic sources (e.g., *BBC News, Reuters*) corresponding to each narrative cluster, explicitly exposing the underlying publisher-bias driving a group's logic.
 *   **LLM Output Truncation:** To enforce strict analytical constraints against the free-tier Causal LM generation quirks, the raw sequence-output is parsed directly at the UI layer to explicitly terminate at the very first full period character (`.`).
+
+### E. Algorithmic Fundamentals & Cloud AI
+*   **From-Scratch Clustering (K-Means):** The black-box `scikit-learn` KMeans dependency was formally removed and replaced with a custom-engineered mathematical `CustomKMeans` algorithm running native numpy array broadcasting (Euclidean distances) to execute Lloyd's algorithm natively. GMM remains leveraging `scikit-learn`.
+*   **Dimensionality Engine (t-SNE vs UMAP):** Integrated `t-SNE` functionally into the UI dropdowns alongside `UMAP`, allowing the user to select whether they want to optimize exclusively for hyper-local cluster density (t-SNE) vs preserving accurate global mathematical distances across narratives (UMAP).
+*   **Hybrid AI Summarization:** Integrated the Google `google-genai` Python package to explicitly target `gemini-2.5-flash` for high-speed, hyper-deterministic 1-sentence cluster summarizations on the free-tier infrastructure. Operates natively on an environment toggle: if a valid `GEMINI_API_KEY` is missing or the API rate-limits, the backend seamlessly catches the failure and falls back to the heavily-constrained local `distilgpt2` HuggingFace pipeline, automatically lighting up a "Local Mode" warning UI badge in the Next.js dashboard perfectly preventing user interruption.
+
+### F. Vector Caching & Clustering Array
+*   **Offline Vector Resilience:** Integrated structural fault-tolerance around the primary API ingestion pipeline. When `NewsAPI.org` extraction limits are exhausted (HTTP 429), the FastAPI backend intentionally intercepts the failure block and flips gracefully into `is_offline_cache` mode. It queries entirely from local `ChromaDB` embeddings natively, triggering a high-visibility animated yellow UI Warning Banner telling the user they are viewing cached semantic vectors perfectly preventing runtime disruption.
+*   **Expansion of non-parametric Manifolds:** Extended the native UI execution state capabilities to encompass two additional non-parametric architectures allowing operation without needing predetermined `$k$` allocations:
+    *   **Agglomerative Clustering:** Rigged mathematically to default against a strict `0.5` dimensional distance threshold if `$k$` isn't given.
+    *   **Affinity Propagation:** Explores structure organically utilizing peer message-passing models via rigid deterministic seed protocols.
+*   **HDBSCAN Fine-Tuning:** Specifically depressed the baseline mathematical volume thresholds for Density-Based mapping (`min_cluster_size=3, min_samples=2`). This greatly enhances algorithmic sensitivity ensuring hyper-dense micro-narratives previously discarded are aggressively extracted from `-1` noise space.

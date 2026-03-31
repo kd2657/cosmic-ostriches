@@ -1,5 +1,8 @@
 Next Steps:
-- Improve summarization of Narratives (OpenAI API?)
-- Improve Narrative Clustering for HDBSCAN (maybe try different algorithms?)
-    - currently there are a lot of not that interesting clusters, and almost always just noise for HDBSCAN
-- Re-write K-Means clustering from scratch rather than using library
+- Add in Wayne's statistics
+    - Basically, "Step 2"
+- List main keywords under each cluster
+- Improve UI for AI Narrative Summaries to be less boxy
+
+Team Planning:
+- Make sure when everyone pulls the current main branch, the backend uv environment is always maintained

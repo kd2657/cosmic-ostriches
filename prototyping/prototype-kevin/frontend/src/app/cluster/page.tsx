@@ -22,19 +22,22 @@ function ClusterContent() {
   
   const [data, setData] = useState<any[]>([]);
   const [summaries, setSummaries] = useState<Record<string, string>>({});
+  const [isLocalSummary, setIsLocalSummary] = useState(false);
+  const [isOfflineCache, setIsOfflineCache] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   
   const [algorithm, setAlgorithm] = useState("hdbscan");
   const [kValue, setKValue] = useState<number | "">("");
+  const [dimReduction, setDimReduction] = useState("umap");
 
-  const fetchData = async (algo: string, k: number | "") => {
+  const fetchData = async (algo: string, k: number | "", dimRed: string) => {
     if (!query) return;
     setLoading(true);
     setError("");
     
     try {
-      const payload: any = { query, algorithm: algo };
+      const payload: any = { query, algorithm: algo, dim_reduction: dimRed };
       if (k !== "") payload.k = k;
       
       const res = await fetch("http://localhost:8000/api/search", {
@@ -49,6 +52,8 @@ function ClusterContent() {
       if (json.status === "success") {
         setData(json.results.points || []);
         setSummaries(json.results.summaries || {});
+        setIsLocalSummary(json.results.is_local_summary || false);
+        setIsOfflineCache(json.results.is_offline_cache || false);
       } else {
         throw new Error(json.detail || "Unknown error");
       }
@@ -60,11 +65,18 @@ function ClusterContent() {
   };
 
   useEffect(() => {
-    fetchData(algorithm, kValue);
+    fetchData(algorithm, kValue, dimReduction);
   }, [query]);
 
+  useEffect(() => {
+    if (isOfflineCache) {
+      const timer = setTimeout(() => setIsOfflineCache(false), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [isOfflineCache]);
+
   const handleApplySettings = () => {
-    fetchData(algorithm, kValue);
+    fetchData(algorithm, kValue, dimReduction);
   };
 
   // Group data by cluster for Plotly with Cosmetic Mapping fixes
@@ -113,17 +125,31 @@ function ClusterContent() {
           <div className="flex items-center gap-2 px-3 border-r border-neutral-800">
             <Settings2 className="w-4 h-4 text-neutral-400" />
             <select 
+              value={dimReduction} 
+              onChange={(e) => setDimReduction(e.target.value)}
+              className="bg-transparent text-sm focus:outline-none cursor-pointer text-blue-400 font-medium pr-1"
+            >
+              <option value="umap">UMAP</option>
+              <option value="tsne">t-SNE</option>
+              <option value="pca">PCA</option>
+            </select>
+          </div>
+          
+          <div className="flex items-center gap-2 px-3 border-r border-neutral-800">
+            <select 
               value={algorithm} 
               onChange={(e) => setAlgorithm(e.target.value)}
-              className="bg-transparent text-sm focus:outline-none cursor-pointer"
+              className="bg-transparent text-sm focus:outline-none cursor-pointer pr-1"
             >
               <option value="hdbscan">HDBSCAN (Auto)</option>
               <option value="kmeans">K-Means</option>
               <option value="gmm">GMM</option>
+              <option value="agglomerative">Agglomerative</option>
+              <option value="affinity">Affinity</option>
             </select>
           </div>
           
-          {(algorithm === "kmeans" || algorithm === "gmm") && (
+          {(algorithm === "kmeans" || algorithm === "gmm" || algorithm === "agglomerative") && (
             <div className="flex items-center gap-2 px-2 border-r border-neutral-800">
               <span className="text-sm text-neutral-400">k=</span>
               <input 
@@ -148,6 +174,15 @@ function ClusterContent() {
       </header>
 
       <main className="flex-grow flex flex-col min-h-0 space-y-4 relative z-0 w-full overflow-hidden shrink-0">
+        {isOfflineCache && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-top-4 fade-in duration-400">
+            <div className="bg-yellow-950 border border-yellow-700 text-yellow-500 px-4 py-2 rounded-full shadow-2xl text-sm flex items-center gap-3 whitespace-nowrap font-medium">
+              <span className="flex h-2 w-2 rounded-full bg-yellow-500 animate-pulse shrink-0 shadow-[0_0_8px_rgba(234,179,8,1)]"></span>
+              NewsAPI Limit Reached. Displaying locally cached vector-matches.
+            </div>
+          </div>
+        )}
+        
         <div className="flex-grow bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden relative min-h-[55vh]">
           {loading && (
             <div className="absolute inset-0 z-20 bg-neutral-900/80 backdrop-blur-sm flex flex-col items-center justify-center">
@@ -162,7 +197,7 @@ function ClusterContent() {
                 <h3 className="text-xl font-bold mb-2">Error Processing Data</h3>
                 <p>{error}</p>
                 <button 
-                  onClick={() => fetchData(algorithm, kValue)}
+                  onClick={() => fetchData(algorithm, kValue, dimReduction)}
                   className="mt-6 px-4 py-2 bg-red-900 hover:bg-red-800 rounded-lg transition-colors cursor-pointer"
                 >
                   Retry
@@ -208,9 +243,16 @@ function ClusterContent() {
         {/* AI Summarization Panel */}
         {!loading && Object.keys(summaries).length > 0 && (
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 overflow-y-auto max-h-[45vh] flex-shrink-0 animate-in fade-in slide-in-from-bottom-2 duration-500">
-             <h3 className="text-lg font-bold text-white mb-4 border-b border-neutral-800 pb-2 flex items-center gap-2">
-               <Sparkles className="w-5 h-5 text-blue-400" />
-               AI Narrative Summaries
+             <h3 className="text-lg font-bold text-white mb-4 border-b border-neutral-800 pb-2 flex items-center justify-between">
+               <div className="flex items-center gap-2">
+                 <Sparkles className="w-5 h-5 text-blue-400" />
+                 AI Narrative Summaries
+               </div>
+               {isLocalSummary && (
+                 <span className="text-xs font-bold bg-orange-950 text-orange-400 px-2 py-0.5 rounded border border-orange-800">
+                   Local Summary Only
+                 </span>
+               )}
              </h3>
              <div className="space-y-6">
                {uniqueClusters.filter(c => c !== -1).map(clusterId => {

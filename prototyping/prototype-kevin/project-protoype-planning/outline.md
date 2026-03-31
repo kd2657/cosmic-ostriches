@@ -22,17 +22,17 @@
   - Most likely separate tab for this
 
 ## ***Step 2 (Addtitional Features): \(Design-in-Progress\)***
+  - ### *Narrative Diversity Score*  
+    - Each cluster is treated as one “event”
+    - *Diversity \= mean squared distance to cluster centroid (connected closely to what we have learned in class)*
+    - Keyword distribution differences (for visualization)
+    - Enables users to "quantify" how controversial or contested an event is across different media sources
+  
   - ### *Cross-Source Contradiction Finder*
     - Identifies the pair of articles (from different sources) that report on the same event but have the most different narratives, sentiment, or framing
     - Define a simple contradiction score (e.g. Similarity times "Narrative Difference")
     - Hopefully integrate with existing visualization (e.g. clusters)
-        
-- ### *Narrative Diversity Score*  
-  - Each cluster is treated as one “event”
-  - *Diversity \= mean squared distance to cluster centroid (connected closely to what we have learned in class)*
-  - Keyword distribution differences (for visualization)
-  - Enables users to "quantify" how controversial or contested an event is across different media sources
-
+      
 - ### *Source Influence Score*  
   - Event Centroid
     - centroid = mean of all embeddings of all articles in the event
