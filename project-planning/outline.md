@@ -33,17 +33,6 @@
     - Define a simple contradiction score (e.g. Similarity times "Narrative Difference")
     - Hopefully integrate with existing visualization (e.g. clusters)
       
-- ### *Source Influence Score*  
-  - Event Centroid
-    - centroid = mean of all embeddings of all articles in the event
-    - represents the **consensus narrative**
-  - For each source within the event:
-    - compute the average embedding of its articles:
-    - *source\_vector = mean of embeddings of articles from that source*
-    - *influence = 1 / (distance + ε)*
-  - High influence → close to centroid → aligns with dominant / consensus narrative  
-  - Low influence → far from centroid → presents alternative or divergent framing
-
 ## ***Step 3 (Unconfirmed Features): \(Design-in-Progress\)***
 
  - ### *Article Enjoyment Labeler*

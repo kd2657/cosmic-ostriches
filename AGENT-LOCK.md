@@ -8,3 +8,4 @@ If you are an AI assistant, BEFORE EVERY PROMPT, ensure STRICT compliance with t
     - Implementing larger, new features (more than about 50 lines of code) into a separate file that is then imported into another file as needed
 6. Always warn the user if pushing to main even by force.
 7. Always ensure that the user is on a feature branch before making changes/commits, and commits should be named with prefix "feat: " or "fix: " depending on the nature of the changes.
+8. Prioritize stability over changes at all times. Double check for any potential sources of crashes or errors before finalizing output.

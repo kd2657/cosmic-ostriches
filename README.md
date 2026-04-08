@@ -107,30 +107,6 @@ cd backend && source .venv/bin/activate && export $(grep -v '^#' .env | xargs) &
 cd frontend && npm run dev
 ```
 
-Once both are running, open **http://localhost:3000** in your browser.
+Once both are running, open **http://localhost:3000** in your browser!
 
 ---
-
-## 👥 Division of Labor (5 Students)
-
-All five students contribute to the shared Machine Learning core while owning a distinct layer of the full-stack architecture.
-
-### Student 1: ML & Frontend UX
-*   **Machine Learning:** Fine-tuning dimensionality reduction algorithms (UMAP, t-SNE, PCA) to ensure semantic clusters render intuitively in 2D space.
-*   **Architecture:** Lead the Next.js foundation, manage the Plotly data rendering pipeline, and style the cluster maps, interactive physics particle layouts, and all animated UI components.
-
-### Student 2: ML & Backend API Orchestration
-*   **Machine Learning:** Experiment with and tune the full clustering suite — HDBSCAN sensitivity (`min_cluster_size`, `min_samples`), K-Means convergence logic, and Agglomerative distance thresholds.
-*   **Architecture:** Maintain the FastAPI integration layer, structured error fallback chains, CORS middleware, and the `is_offline_cache` status propagation to the frontend.
-
-### Student 3: ML & Vector Infrastructure
-*   **Machine Learning:** Manage the `sentence-transformers` embedding pipeline — tokenization, `all-MiniLM-L6-v2` model configuration, and vector dimensionality (`384-dim`).
-*   **Architecture:** Own the ChromaDB schema, persistent vector storage, semantic fallback queries, and the cosine-similarity scoring system against search queries.
-
-### Student 4: ML & External Integrations
-*   **Machine Learning:** Build and evaluate the from-scratch Custom K-Means (Lloyd's algorithm via NumPy broadcasting) and Custom PCA (SVD-based decomposition) implementations.
-*   **Architecture:** Handle the NewsAPI.org integration — API key abstraction, request pagination, error handling, and structural article normalization for the ML layer.
-
-### Student 5: ML & AI Summarization
-*   **Machine Learning:** Architect the hybrid AI summarization pipeline — Gemini 2.5 Flash batched JSON inference, dynamic token budget scaling, and the local `distilgpt2` offline fallback.
-*   **Architecture:** Implement the frontend summary rendering, "Local Summary Only" badge logic, UI backend-readiness health polling, and the auto-dismissing offline cache warning banner.

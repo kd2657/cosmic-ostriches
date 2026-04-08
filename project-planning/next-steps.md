@@ -1,12 +1,14 @@
-Next Steps:
-- List main keywords under each cluster (using, e.g. TF-IDF)
-- Improve UI for AI Narrative Summaries to be less boxy
+Next Steps in Progress:
 - Improve UI to selecting clustering/dislpay parameters (more user friendly)
-- Improve UI for users looking at clustering plot (more informative to non-technical users)
-- Explore alternative API news sources (e.g. webz.io, GDELT, newsapi.ai)
-    - Scraper for full news articles?
-- Research how some Neural Network could be used to improve or extend project
 - Add in Wayne's statistics (essentially, "Step 2")
 - Explore and add in evaluation metrics, and how to present this
-- Try to train a linear classifier on pre-labeled dataset to try to predict news article sentiment
+- Try to train a linear classifier on pre-labeled dataset to try to predict news article sentiment and display some UI element for it
+- List main keywords under each cluster (using, e.g. TF-IDF)
+- Improve UI for AI Narrative Summaries to be less boxy
+- Explore alternative API news sources (e.g. webz.io, GDELT, newsapi.ai)
+    - Scraper for full news articles?
 - Create a "Daily Briefing" tab that gives users a quick overview of clusters of news from the past 24 hours
+
+Next Steps:
+- Step 3 features
+- Research how some Neural Network could be used to improve or extend project
