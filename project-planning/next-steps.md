@@ -1,5 +1,4 @@
 Next Steps:
-- Rearrange repository, from prototype stage, to first implemention (moving directories to actual project root)
 - List main keywords under each cluster (using, e.g. TF-IDF)
 - Improve UI for AI Narrative Summaries to be less boxy
 - Improve UI to selecting clustering/dislpay parameters (more user friendly)
@@ -8,5 +7,6 @@ Next Steps:
     - Scraper for full news articles?
 - Research how some Neural Network could be used to improve or extend project
 - Add in Wayne's statistics (essentially, "Step 2")
+- Explore and add in evaluation metrics, and how to present this
 - Try to train a linear classifier on pre-labeled dataset to try to predict news article sentiment
 - Create a "Daily Briefing" tab that gives users a quick overview of clusters of news from the past 24 hours
