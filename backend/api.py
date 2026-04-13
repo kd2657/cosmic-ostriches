@@ -56,9 +56,9 @@ def fetch_news(query: str, page_size: int = 50) -> List[Dict[str, Any]]:
             
     return cleaned_articles
 
-def fetch_daily_briefing(page_size: int = 100) -> List[Dict[str, Any]]:
+def fetch_daily_gradient(page_size: int = 100) -> List[Dict[str, Any]]:
     """
-    Fetches the latest top US headlines for the daily briefing.
+    Fetches the latest top US headlines for the daily gradient.
     """
     if not NEWS_API_KEY:
         raise ValueError("NEWSAPI_KEY environment variable is not set.")

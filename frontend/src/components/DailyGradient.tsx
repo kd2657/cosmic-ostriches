@@ -3,33 +3,34 @@
 import { useState, useEffect } from "react";
 import { Loader2, ChevronDown, ChevronUp, Link as LinkIcon, Compass } from "lucide-react";
 
-export default function DailyBriefing() {
-  const [briefing, setBriefing] = useState<any[]>([]);
+export default function DailyGradient({ localMode = false }: { localMode?: boolean }) {
+  const [gradient, setGradient] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
 
   useEffect(() => {
-    async function loadBriefing() {
+    async function loadGradient() {
       try {
-        const res = await fetch("http://localhost:8000/api/daily-briefing");
-        if (!res.ok) throw new Error("Failed to fetch daily briefing");
+        const res = await fetch(`http://localhost:8000/api/daily-gradient?force_local=${localMode}`);
+        if (!res.ok) throw new Error("Failed to fetch daily gradient");
         const json = await res.json();
-        setBriefing(json.results || []);
+        setGradient(json.results || []);
       } catch (err: any) {
         setError(err.message);
       } finally {
         setLoading(false);
       }
     }
-    loadBriefing();
-  }, []);
+    setLoading(true);
+    loadGradient();
+  }, [localMode]);
 
   if (loading) {
      return (
        <div className="flex flex-col items-center py-20 z-10 relative">
           <Loader2 className="w-10 h-10 animate-spin text-blue-500 mb-4" /> 
-          <p className="text-neutral-400 animate-pulse">Curating the Daily Briefing...</p>
+          <p className="text-neutral-400 animate-pulse">Curating the Daily Gradient...</p>
        </div>
      );
   }
@@ -43,15 +44,15 @@ export default function DailyBriefing() {
        <div className="mb-10 text-center space-y-4">
           <h2 className="text-4xl font-extrabold text-white flex items-center justify-center gap-3">
              <Compass className="w-8 h-8 text-blue-400" />
-             The Daily Briefing
+             Daily Gradient
           </h2>
-          <p className="text-neutral-400 max-w-2xl mx-auto">
-             Top diverse narratives from the last 24 hours. Expanded nodes show different perspectives selected for maximum relevance and variation.
+          <p className="text-neutral-400 max-w-3xl mx-auto">
+             Diverse narratives from the last 24 hours in a bite-sized serving! Expand nodes to see different perspectives.
           </p>
        </div>
        
        <div className="flex flex-col gap-6 pb-20">
-         {briefing.map((item, idx) => {
+         {gradient.map((item, idx) => {
             const isExpanded = expandedIndex === idx;
             const main = item.main_article;
             const subs = item.related_articles;

@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Loader2, BarChart2, Compass, Layers } from "lucide-react";
-import DailyBriefing from "@/components/DailyBriefing";
+import { Search, Loader2, BarChart2, Compass, Layers, Database, WifiOff } from "lucide-react";
+import DailyGradient from "@/components/DailyGradient";
 
 function BackgroundBlobs() {
   const blobRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -114,7 +114,8 @@ export default function Home() {
   const [searchedQuery, setSearchedQuery] = useState("");
   const [isOfflineCache, setIsOfflineCache] = useState(false);
   const [backendReady, setBackendReady] = useState(false);
-  const [activeTab, setActiveTab] = useState<"search" | "briefing">("search");
+  const [activeTab, setActiveTab] = useState<"search" | "gradient">("search");
+  const [localMode, setLocalMode] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -149,7 +150,7 @@ export default function Home() {
       const res = await fetch("http://localhost:8000/api/articles", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query })
+        body: JSON.stringify({ query, force_local: localMode })
       });
       if (!res.ok) throw new Error("Fetch failed");
       const json = await res.json();
@@ -167,6 +168,17 @@ export default function Home() {
     <div className="min-h-screen bg-neutral-950 flex flex-col items-center py-20 px-4 relative overflow-hidden">
       <BackgroundBlobs />
 
+      <div className="absolute top-4 right-4 z-50 animate-in fade-in slide-in-from-top-4 duration-500">
+         <button 
+            onClick={() => setLocalMode(!localMode)}
+            title="Local Mode disables the NewsAPI text fetcher entirely and routes search/exploration explicitly through the local ChromeDB vector embeddings."
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-[10px] sm:text-xs font-medium transition-all shadow-md backdrop-blur-md ${localMode ? 'bg-amber-500/10 text-amber-500 border-amber-500/40 shadow-[0_0_10px_rgba(245,158,11,0.2)]' : 'bg-neutral-900/30 text-neutral-500 border-neutral-800/50 hover:text-neutral-400'}`}
+         >
+            {localMode ? <WifiOff className="w-3 h-3" /> : <Database className="w-3 h-3" />}
+            {localMode ? "LOCAL MODE: ON" : "LOCAL MODE: OFF"}
+         </button>
+      </div>
+
       {isOfflineCache && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-top-4 fade-in duration-400">
           <div className="bg-yellow-950 border border-yellow-700 text-yellow-500 px-4 py-2 rounded-full shadow-2xl text-sm flex items-center gap-3 whitespace-nowrap font-medium pointer-events-auto">
@@ -176,7 +188,7 @@ export default function Home() {
         </div>
       )}
 
-      <div className={`z-10 w-full max-w-3xl text-center space-y-8 transition-all duration-500 ${articles.length > 0 || activeTab === 'briefing' ? 'mt-0' : 'mt-[20vh]'}`}>
+      <div className={`z-10 w-full max-w-3xl text-center space-y-8 transition-all duration-500 ${articles.length > 0 || activeTab === 'gradient' ? 'mt-0' : 'mt-[20vh]'}`}>
         <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight text-white mb-4">
           The Local <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">Minima</span>
         </h1>
@@ -188,10 +200,14 @@ export default function Home() {
 
         <div className="flex justify-center gap-4 mt-8 slide-in-from-bottom-4 animate-in fade-in duration-500">
            <button onClick={() => setActiveTab("search")} className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 ${activeTab === 'search' ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}>
-              <Layers className="w-5 h-5" /> Semantic Search
+              <Layers className="w-5 h-5" /> News Clusters
            </button>
-           <button onClick={() => setActiveTab("briefing")} className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 ${activeTab === 'briefing' ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}>
-              <Compass className="w-5 h-5" /> Daily Briefing
+           <button 
+              onClick={() => setActiveTab("gradient")} 
+              disabled={!backendReady}
+              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${activeTab === 'gradient' ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
+           >
+              {backendReady ? <Compass className="w-5 h-5" /> : <Loader2 className="w-5 h-5 animate-spin" />} Daily Gradient
            </button>
         </div>
 
@@ -221,7 +237,7 @@ export default function Home() {
         {activeTab === "search" && articles.length > 0 && (
           <div className="mt-8 flex justify-center animate-in fade-in slide-in-from-bottom-4 duration-700">
             <button
-               onClick={() => router.push(`/cluster?q=${encodeURIComponent(searchedQuery)}`)}
+               onClick={() => router.push(`/cluster?q=${encodeURIComponent(searchedQuery)}&local=${localMode}`)}
                className="px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold rounded-xl shadow-lg transition-transform hover:scale-105 flex items-center gap-2 cursor-pointer"
             >
                <BarChart2 className="w-5 h-5" />
@@ -260,7 +276,7 @@ export default function Home() {
         </div>
       )}
 
-      {activeTab === "briefing" && <DailyBriefing />}
+      {activeTab === "gradient" && <DailyGradient localMode={localMode} />}
     </div>
   );
 }

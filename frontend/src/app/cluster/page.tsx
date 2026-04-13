@@ -19,6 +19,7 @@ function ClusterContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const query = searchParams.get("q") || "";
+  const localParam = searchParams.get("local") === "true";
   
   const [data, setData] = useState<any[]>([]);
   const [summaries, setSummaries] = useState<Record<string, string>>({});
@@ -37,7 +38,7 @@ function ClusterContent() {
     setError("");
     
     try {
-      const payload: any = { query, algorithm: algo, dim_reduction: dimRed };
+      const payload: any = { query, algorithm: algo, dim_reduction: dimRed, force_local: localParam };
       if (k !== "") payload.k = k;
       
       const res = await fetch("http://localhost:8000/api/search", {

@@ -454,9 +454,9 @@ def maximal_marginal_relevance(query_embedding: np.ndarray, doc_embeddings: np.n
         
     return selected
 
-def process_daily_briefing(articles: List[Dict[str, Any]], n_main: int = 8, n_related: int = 4) -> List[Dict[str, Any]]:
+def process_daily_gradient(articles: List[Dict[str, Any]], n_main: int = 8, n_related: int = 4) -> List[Dict[str, Any]]:
     """
-    Main orchestrator for the backend math of the daily briefing.
+    Main orchestrator for the backend math of the daily gradient.
     Vectorizes local articles, clusters by FPS, and populates by MMR.
     """
     if not articles:
