@@ -10,6 +10,7 @@ from google import genai
 from typing import List, Dict, Any, Optional
 import numpy as np
 import warnings
+from threading import Lock
 from transformers import logging as transformers_logging
 
 warnings.filterwarnings("ignore", category=FutureWarning, module="sklearn.*")
@@ -30,6 +31,10 @@ CHROMA_PATH = os.path.join(os.path.dirname(__file__), "chroma_db")
 os.makedirs(CHROMA_PATH, exist_ok=True)
 chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
 collection = chroma_client.get_or_create_collection(name="news_narratives")
+
+# UMAP relies on Numba's workqueue threading layer in this environment, which
+# can abort the process if multiple FastAPI threads enter it concurrently.
+_cluster_pipeline_lock = Lock()
 
 def vectorize_and_store(articles: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
@@ -207,60 +212,61 @@ def process_batch_cluster(
         return []
     
     embeddings = np.array(data["embeddings"])
-    
-    # Clustering
-    labels = []
-    if method == "kmeans" and cluster_k:
-        k = min(cluster_k, len(embeddings))
-        kmeans = CustomKMeans(n_clusters=k, random_state=42)
-        labels = kmeans.fit_predict(embeddings)
-    elif method == "gmm" and cluster_k:
-        k = min(cluster_k, len(embeddings))
-        gmm = GaussianMixture(n_components=k, random_state=42)
-        labels = gmm.fit_predict(embeddings)
-    elif method == "agglomerative":
-        k = min(cluster_k, len(embeddings)) if cluster_k else None
-        if k:
-            agg = AgglomerativeClustering(n_clusters=k)
-        else:
-            agg = AgglomerativeClustering(n_clusters=None, distance_threshold=0.5)
-        labels = agg.fit_predict(embeddings)
-    elif method == "affinity":
-        aff = AffinityPropagation(random_state=42)
-        labels = aff.fit_predict(embeddings)
-    else:
-        # Fallback to HDBSCAN
-        # Works well when k is unknown. tuned to aggressive sensitivity.
-        min_cluster = min(len(embeddings), 3)
-        if len(embeddings) < 3:
-            labels = [0] * len(embeddings) # not enough data to cluster
-        else:
-            hdb = HDBSCAN(min_cluster_size=min_cluster, min_samples=2)
-            labels = hdb.fit_predict(embeddings)
 
-    # Dimensionality Reduction for 2D Plotting
-    if dim_reduction == "tsne" and len(embeddings) > 1:
-        # Perplexity strictly bound to sample size logic constraints
-        perplexity = min(30, max(1, len(embeddings) - 1))
-        if perplexity >= len(embeddings):
-            perplexity = len(embeddings) - 1
-            
-        if perplexity < 1:
-            reduced_embeddings = np.zeros((len(embeddings), 2))
+    with _cluster_pipeline_lock:
+        # Clustering
+        labels = []
+        if method == "kmeans" and cluster_k:
+            k = min(cluster_k, len(embeddings))
+            kmeans = CustomKMeans(n_clusters=k, random_state=42)
+            labels = kmeans.fit_predict(embeddings)
+        elif method == "gmm" and cluster_k:
+            k = min(cluster_k, len(embeddings))
+            gmm = GaussianMixture(n_components=k, random_state=42)
+            labels = gmm.fit_predict(embeddings)
+        elif method == "agglomerative":
+            k = min(cluster_k, len(embeddings)) if cluster_k else None
+            if k:
+                agg = AgglomerativeClustering(n_clusters=k)
+            else:
+                agg = AgglomerativeClustering(n_clusters=None, distance_threshold=0.5)
+            labels = agg.fit_predict(embeddings)
+        elif method == "affinity":
+            aff = AffinityPropagation(random_state=42)
+            labels = aff.fit_predict(embeddings)
         else:
-            reducer = TSNE(n_components=2, perplexity=perplexity, random_state=42, init='pca', learning_rate='auto')
-            reduced_embeddings = reducer.fit_transform(embeddings)
-    elif dim_reduction == "pca":
-        pca = CustomPCA(n_components=2)
-        reduced_embeddings = pca.fit_transform(embeddings)
-    else:
-        # Fallback to standard UMAP mapping
-        n_neighbors = min(15, len(embeddings) - 1)
-        if n_neighbors < 2:
-            reduced_embeddings = np.zeros((len(embeddings), 2))
+            # Fallback to HDBSCAN
+            # Works well when k is unknown. tuned to aggressive sensitivity.
+            min_cluster = min(len(embeddings), 3)
+            if len(embeddings) < 3:
+                labels = [0] * len(embeddings) # not enough data to cluster
+            else:
+                hdb = HDBSCAN(min_cluster_size=min_cluster, min_samples=2)
+                labels = hdb.fit_predict(embeddings)
+
+        # Dimensionality Reduction for 2D Plotting
+        if dim_reduction == "tsne" and len(embeddings) > 1:
+            # Perplexity strictly bound to sample size logic constraints
+            perplexity = min(30, max(1, len(embeddings) - 1))
+            if perplexity >= len(embeddings):
+                perplexity = len(embeddings) - 1
+                
+            if perplexity < 1:
+                reduced_embeddings = np.zeros((len(embeddings), 2))
+            else:
+                reducer = TSNE(n_components=2, perplexity=perplexity, random_state=42, init='pca', learning_rate='auto')
+                reduced_embeddings = reducer.fit_transform(embeddings)
+        elif dim_reduction == "pca":
+            pca = CustomPCA(n_components=2)
+            reduced_embeddings = pca.fit_transform(embeddings)
         else:
-            reducer = UMAP(n_neighbors=n_neighbors, min_dist=0.1, n_components=2, random_state=42)
-            reduced_embeddings = reducer.fit_transform(embeddings)
+            # Fallback to standard UMAP mapping
+            n_neighbors = min(15, len(embeddings) - 1)
+            if n_neighbors < 2:
+                reduced_embeddings = np.zeros((len(embeddings), 2))
+            else:
+                reducer = UMAP(n_neighbors=n_neighbors, min_dist=0.1, n_components=2, random_state=42)
+                reduced_embeddings = reducer.fit_transform(embeddings)
 
     # Build response points
     results = []

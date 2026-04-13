@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, Suspense, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { ArrowLeft, Loader2, Settings2, Sparkles } from "lucide-react";
@@ -30,9 +30,25 @@ function ClusterContent() {
   const [algorithm, setAlgorithm] = useState("hdbscan");
   const [kValue, setKValue] = useState<number | "">("");
   const [dimReduction, setDimReduction] = useState("umap");
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const lastRequestKeyRef = useRef("");
 
-  const fetchData = async (algo: string, k: number | "", dimRed: string) => {
+  const fetchData = async (
+    algo: string,
+    k: number | "",
+    dimRed: string,
+    options?: { dedupe?: boolean }
+  ) => {
     if (!query) return;
+
+    const requestKey = JSON.stringify({ query, algorithm: algo, k, dimReduction: dimRed });
+    if (options?.dedupe && lastRequestKeyRef.current === requestKey) return;
+
+    lastRequestKeyRef.current = requestKey;
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setLoading(true);
     setError("");
     
@@ -43,12 +59,15 @@ function ClusterContent() {
       const res = await fetch("http://localhost:8000/api/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: controller.signal
       });
       
       if (!res.ok) throw new Error("Failed to fetch data from backend");
       
       const json = await res.json();
+      if (abortControllerRef.current !== controller) return;
+
       if (json.status === "success") {
         setData(json.results.points || []);
         setSummaries(json.results.summaries || {});
@@ -58,14 +77,18 @@ function ClusterContent() {
         throw new Error(json.detail || "Unknown error");
       }
     } catch (err: any) {
+      if (err.name === "AbortError") return;
       setError(err.message);
     } finally {
-      setLoading(false);
+      if (abortControllerRef.current === controller) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    fetchData(algorithm, kValue, dimReduction);
+    fetchData(algorithm, kValue, dimReduction, { dedupe: true });
+    return () => abortControllerRef.current?.abort();
   }, [query]);
 
   useEffect(() => {
