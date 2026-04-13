@@ -17,8 +17,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
-from api import fetch_news
-from ml import vectorize_and_store, process_batch_cluster, query_local_database, compute_similarity_scores
+from api import fetch_news, fetch_daily_briefing
+from ml import vectorize_and_store, process_batch_cluster, query_local_database, compute_similarity_scores, process_daily_briefing
 
 app = FastAPI(title="The Local Minima API")
 
@@ -103,6 +103,21 @@ def run_search_pipeline(req: SearchRequest):
         results["is_offline_cache"] = is_offline_cache
         
         return {"status": "success", "results": results}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/daily-briefing")
+def get_daily_briefing():
+    try:
+        articles = fetch_daily_briefing(page_size=100)
+        
+        if articles:
+            articles = vectorize_and_store(articles)
+        else:
+            raise Exception("No recent articles could be fetched.")
+            
+        briefing = process_daily_briefing(articles)
+        return {"status": "success", "results": briefing}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Loader2, BarChart2 } from "lucide-react";
+import { Search, Loader2, BarChart2, Compass, Layers } from "lucide-react";
+import DailyBriefing from "@/components/DailyBriefing";
 
 function BackgroundBlobs() {
   const blobRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -113,6 +114,7 @@ export default function Home() {
   const [searchedQuery, setSearchedQuery] = useState("");
   const [isOfflineCache, setIsOfflineCache] = useState(false);
   const [backendReady, setBackendReady] = useState(false);
+  const [activeTab, setActiveTab] = useState<"search" | "briefing">("search");
   const router = useRouter();
 
   useEffect(() => {
@@ -174,18 +176,28 @@ export default function Home() {
         </div>
       )}
 
-      <div className={`z-10 w-full max-w-3xl text-center space-y-8 transition-all duration-500 ${articles.length > 0 ? 'mt-0' : 'mt-[20vh]'}`}>
+      <div className={`z-10 w-full max-w-3xl text-center space-y-8 transition-all duration-500 ${articles.length > 0 || activeTab === 'briefing' ? 'mt-0' : 'mt-[20vh]'}`}>
         <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight text-white mb-4">
           The Local <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">Minima</span>
         </h1>
-        {articles.length === 0 && (
+        {articles.length === 0 && activeTab === 'search' && (
           <p className="text-lg text-neutral-400 max-w-xl mx-auto">
             Enter a topic and uncover the narratives across today's news.
           </p>
         )}
 
-        <form onSubmit={handleSearch} className="relative mt-8 w-full mx-auto">
-          <div className="relative flex items-center">
+        <div className="flex justify-center gap-4 mt-8 slide-in-from-bottom-4 animate-in fade-in duration-500">
+           <button onClick={() => setActiveTab("search")} className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 ${activeTab === 'search' ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}>
+              <Layers className="w-5 h-5" /> Semantic Search
+           </button>
+           <button onClick={() => setActiveTab("briefing")} className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 ${activeTab === 'briefing' ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}>
+              <Compass className="w-5 h-5" /> Daily Briefing
+           </button>
+        </div>
+
+        {activeTab === "search" && (
+          <form onSubmit={handleSearch} className="relative mt-8 w-full mx-auto animate-in fade-in duration-500">
+            <div className="relative flex items-center">
             <input
               type="text"
               value={query}
@@ -204,8 +216,9 @@ export default function Home() {
             </button>
           </div>
         </form>
+        )}
         
-        {articles.length > 0 && (
+        {activeTab === "search" && articles.length > 0 && (
           <div className="mt-8 flex justify-center animate-in fade-in slide-in-from-bottom-4 duration-700">
             <button
                onClick={() => router.push(`/cluster?q=${encodeURIComponent(searchedQuery)}`)}
@@ -218,7 +231,7 @@ export default function Home() {
         )}
       </div>
 
-      {articles.length > 0 && (
+      {activeTab === "search" && articles.length > 0 && (
         <div className="z-10 w-full max-w-3xl mt-12 space-y-4 pb-20 animate-in fade-in duration-500">
           <h2 className="text-2xl font-bold text-white mb-6 border-b border-neutral-800 pb-2 flex justify-between items-end">
             <span>Fetched Articles</span>
@@ -246,6 +259,8 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {activeTab === "briefing" && <DailyBriefing />}
     </div>
   );
 }
