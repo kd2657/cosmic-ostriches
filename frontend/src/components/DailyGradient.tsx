@@ -71,7 +71,7 @@ export default function DailyGradient({ localMode = false }: { localMode?: boole
                           {isExpanded ? <ChevronUp className="w-6 h-6" /> : <ChevronDown className="w-6 h-6" />}
                        </div>
                     </div>
-                    <p className="text-neutral-400 mt-3 line-clamp-2 md:line-clamp-none">{main.description}</p>
+                    <p className="text-neutral-400 mt-3 line-clamp-2 md:line-clamp-none">{(main.body || "").slice(0, 450)}...</p>
                     <div className="text-xs text-neutral-500 mt-4 flex justify-between items-center">
                        <span className="font-bold text-neutral-300 uppercase bg-neutral-800 px-2 py-1 rounded">{main.source}</span>
                        <a href={main.url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-blue-400 hover:text-blue-300 bg-blue-900/20 px-3 py-1 rounded-full transition-colors" onClick={(e) => e.stopPropagation()}>
@@ -85,7 +85,7 @@ export default function DailyGradient({ localMode = false }: { localMode?: boole
                     <div className="overflow-hidden">
                        <div className="p-6 pt-0 border-t border-neutral-800/50 bg-neutral-950/40">
                           <h4 className="text-sm font-semibold text-neutral-400 my-4 tracking-wider uppercase flex items-center justify-between">
-                            <span>Alternative Perspectives</span>
+                            <span>Similar Stories:</span>
                             <span className="text-xs bg-neutral-800 px-2 py-0.5 rounded text-neutral-500">{subs.length} Selected</span>
                           </h4>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

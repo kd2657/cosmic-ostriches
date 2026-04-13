@@ -29,7 +29,7 @@ summarizer = pipeline("text-generation", model="distilgpt2")
 CHROMA_PATH = os.path.join(os.path.dirname(__file__), "chroma_db")
 os.makedirs(CHROMA_PATH, exist_ok=True)
 chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
-collection = chroma_client.get_or_create_collection(name="news_narratives")
+collection = chroma_client.get_or_create_collection(name="newsapi_ai_fullbody_collection")
 
 def vectorize_and_store(articles: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
@@ -51,7 +51,7 @@ def vectorize_and_store(articles: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "title": a["title"],
             "url": a.get("url", ""),
             "source": a.get("source", ""),
-            "description": a.get("description", ""),
+            "body": a.get("body", ""),
             "publish_date": a.get("publish_date", "")
         } for a in new_articles]
         
@@ -264,28 +264,9 @@ def process_batch_cluster(
 
     # Build response points
     results = []
-    cluster_titles = {}
-    for idx, article_id in enumerate(ids):
-        meta = data["metadatas"][idx]
-        cluster_id = int(labels[idx])
-        
-        # Accumulate titles for AI summary
-        if cluster_id not in cluster_titles:
-            cluster_titles[cluster_id] = []
-        cluster_titles[cluster_id].append(meta.get("title", ""))
-            
-        results.append({
-            "id": article_id,
-            "title": meta.get("title", "Unknown"),
-            "url": meta.get("url", ""),
-            "source": meta.get("source", ""),
-            "description": meta.get("description", ""),
-            "cluster": cluster_id,
-            "x": float(reduced_embeddings[idx][0]),
-            "y": float(reduced_embeddings[idx][1])
-        })
-        
-    # Hybrid Gemini / Local Auto-Summarization
+    cluster_texts = {}
+    
+    # Hybrid Gemini / Local Auto-Summarization Key detection
     gemini_key = os.getenv("GEMINI_API_KEY")
     client = None
     if gemini_key:
@@ -295,25 +276,54 @@ def process_batch_cluster(
             pass
 
     used_local_fallback = False if client else True
-    used_local_fallback = False if client else True
+    
+    for idx, article_id in enumerate(ids):
+        meta = data["metadatas"][idx]
+        cluster_id = int(labels[idx])
+        
+        if cluster_id not in cluster_texts:
+            cluster_texts[cluster_id] = []
+            
+        t = meta.get("title", "")
+        b = meta.get("body", "")
+        
+        # Chunk logic based on API constraints
+        if b:
+            chunk = b[:2500] if client else b[:200]
+            cluster_texts[cluster_id].append(f"{t}: {chunk}")
+        else:
+            cluster_texts[cluster_id].append(t)
+            
+        results.append({
+            "id": article_id,
+            "title": meta.get("title", "Unknown"),
+            "url": meta.get("url", ""),
+            "source": meta.get("source", ""),
+            "body": meta.get("body", ""),
+            "cluster": cluster_id,
+            "x": float(reduced_embeddings[idx][0]),
+            "y": float(reduced_embeddings[idx][1])
+        })
+        
     summaries = {}
     cluster_strings = ""
     target_clusters = []
     
-    for cluster_id, titles in cluster_titles.items():
+    for cluster_id, texts in cluster_texts.items():
         if cluster_id == -1:
             summaries[str(cluster_id)] = "Unclustered noise and outlier narratives."
             continue
         
-        top_titles_str = ". ".join(titles[:5])
-        cluster_strings += f"Cluster {cluster_id}:\n{top_titles_str}\n\n"
+        # Pass up to 5 full text chunks for AI analysis
+        top_texts_str = "\n---\n".join(texts[:5])
+        cluster_strings += f"Cluster {cluster_id}:\n{top_texts_str}\n\n"
         target_clusters.append(cluster_id)
         
     summary_generated = False
     
     if client and target_clusters:
         try:
-            prompt = f"You are an analytical AI bot. Read the following sets of news headlines grouped by cluster. Synthesize and summarize the main narrative connecting each cluster into a clear, concise paragraph without strict limits. Highlight any notable differences between each cluster. Avoid using the word 'cluster' in your response. Return your response STRICTLY as a valid JSON object where each KEY is the plain cluster number as a string (e.g. \"0\", \"1\", \"2\") and each VALUE is the summary paragraph. Ensure all text values are properly escaped and contain absolutely NO literal newlines. \n\n{cluster_strings}"
+            prompt = f"You are an analytical AI bot. Read the following sets of news reporting grouped by cluster. Synthesize and summarize the main narrative connecting each cluster into a clear, concise paragraph without strict limits. Highlight any notable differences between each cluster. Avoid using the word 'cluster' in your response. Return your response STRICTLY as a valid JSON object where each KEY is the plain cluster number as a string (e.g. \"0\", \"1\", \"2\") and each VALUE is the summary paragraph. Ensure all text values are properly escaped and contain absolutely NO literal newlines. \n\n{cluster_strings}"
             
             response = client.models.generate_content(
                 model='gemini-2.5-flash',
@@ -350,8 +360,9 @@ def process_batch_cluster(
             
     if not summary_generated:
         for cid in target_clusters:
-            top_titles_str = ". ".join(cluster_titles[cid][:5])
-            prompt = f"Summarize the main common theme of these news headlines in one short sentence:\n{top_titles_str}\n\nSummary:"
+            # Only pass a severely truncated subset of the first headline text block for GPT2 logic
+            input_text = cluster_texts[cid][0][:100] if cluster_texts.get(cid) else "Global news."
+            prompt = f"Summarize the context: {input_text}"
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 out = summarizer(
@@ -484,7 +495,7 @@ def process_daily_gradient(articles: List[Dict[str, Any]], n_main: int = 8, n_re
         main_article = {
             "id": main_id,
             "title": main_meta.get("title", ""),
-            "description": main_meta.get("description", ""),
+            "body": main_meta.get("body", ""),
             "url": main_meta.get("url", ""),
             "source": main_meta.get("source", ""),
             "publish_date": main_meta.get("publish_date", "")
@@ -517,7 +528,7 @@ def process_daily_gradient(articles: List[Dict[str, Any]], n_main: int = 8, n_re
                 related_articles.append({
                     "id": r_id,
                     "title": r_meta.get("title", ""),
-                    "description": r_meta.get("description", ""),
+                    "body": r_meta.get("body", ""),
                     "url": r_meta.get("url", ""),
                     "source": r_meta.get("source", ""),
                     "publish_date": r_meta.get("publish_date", "")
