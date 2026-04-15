@@ -94,10 +94,15 @@ function ClusterContent() {
     return {
       x: clusterPoints.map(d => d.x),
       y: clusterPoints.map(d => d.y),
+      customdata: clusterPoints.map(d => d.id),
       type: "scatter",
       mode: "markers",
       name: clusterId === -1 ? "Noise (Unclustered)" : `Narrative ${clusterId + 1}`,
-      text: clusterPoints.map(d => `<b>${d.source}</b><br>${d.title}`),
+      text: clusterPoints.map(d => {
+        let desc = d.description || "";
+        if (desc.length > 80) desc = desc.slice(0, 80) + "...";
+        return `<b>${d.source}</b><br>${d.title}<br><i style="color:#a3a3a3;">${desc}</i><br><br><span style="color:#60a5fa;">(Click point to read full article)</span>`;
+      }),
       hoverinfo: "text",
       hoverlabel: { bgcolor: "#171717", font: { color: "white" }, align: "left" },
       marker: {
@@ -215,6 +220,14 @@ function ClusterContent() {
           <div className="absolute inset-0 w-full h-full z-0">
             <Plot
               data={plotData as any}
+              onClick={(e: any) => {
+                if (e.points && e.points.length > 0) {
+                  const articleId = e.points[0].customdata;
+                  const urlParams = new URLSearchParams({ q: query, algo: algorithm, dim: dimReduction });
+                  if (kValue !== "") urlParams.append("k", kValue.toString());
+                  router.push(`/article/${encodeURIComponent(articleId)}?${urlParams.toString()}`);
+                }
+              }}
               layout={{
                 autosize: true,
                 paper_bgcolor: 'transparent',
