@@ -140,3 +140,12 @@ def get_daily_gradient(force_local: bool = False):
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+from backend.ml import get_article_by_id
+
+@app.get("/api/article/{article_id:path}")
+def fetch_single_article(article_id: str):
+    data = get_article_by_id(article_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="Article not found")
+    return {"status": "success", "article": data}
