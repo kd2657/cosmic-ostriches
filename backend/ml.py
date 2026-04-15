@@ -29,7 +29,7 @@ summarizer = pipeline("text-generation", model="distilgpt2")
 CHROMA_PATH = os.path.join(os.path.dirname(__file__), "chroma_db")
 os.makedirs(CHROMA_PATH, exist_ok=True)
 chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
-collection = chroma_client.get_or_create_collection(name="newsapi_ai_fullbody_collection")
+collection = chroma_client.get_or_create_collection(name="news_diversity_v3_collection")
 
 def vectorize_and_store(articles: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
@@ -52,6 +52,7 @@ def vectorize_and_store(articles: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "url": a.get("url", ""),
             "source": a.get("source", ""),
             "body": a.get("body", ""),
+            "category": a.get("category", "General"),
             "publish_date": a.get("publish_date", "")
         } for a in new_articles]
         
@@ -384,10 +385,11 @@ def process_batch_cluster(
         "is_local_summary": used_local_fallback
     }
 
-def farthest_point_sampling(embeddings: np.ndarray, k: int) -> List[int]:
+def farthest_point_sampling(embeddings: np.ndarray, k: int, categories: List[str] = None, max_per_category: int = 2) -> List[int]:
     """
     Selects k points from embeddings that are farthest apart.
     Implemented deterministically from scratch to maximize diversity.
+    Optionally dynamically enforces categorical ceilings to prevent thematic saturation.
     """
     n = len(embeddings)
     if n <= k:
@@ -396,8 +398,16 @@ def farthest_point_sampling(embeddings: np.ndarray, k: int) -> List[int]:
     # 1. Start with the index furthest from the global centroid
     centroid = np.mean(embeddings, axis=0)
     distances_to_centroid = np.linalg.norm(embeddings - centroid, axis=1)
-    selected = [int(np.argmax(distances_to_centroid))]
     
+    first_selected = int(np.argmax(distances_to_centroid))
+    selected = [first_selected]
+    
+    # Setup categorical limit trackers
+    category_counts = {}
+    if categories:
+        first_cat = categories[first_selected]
+        category_counts[first_cat] = 1
+        
     # Maintain the minimum distance from each point to the selected set
     min_dist = np.full(n, np.inf)
     
@@ -410,8 +420,31 @@ def farthest_point_sampling(embeddings: np.ndarray, k: int) -> List[int]:
         # We don't want to re-select
         min_dist[selected] = -1.0
         
-        next_selected = int(np.argmax(min_dist))
-        selected.append(next_selected)
+        # Try to find furthest unmapped boundary adhering to category cap constraints
+        sorted_indices = np.argsort(min_dist)[::-1]
+        found = False
+        
+        for candidate in sorted_indices:
+            if min_dist[candidate] < 0:
+                break # Since properties track descending, -1 denotes exhaustion of usable pools
+                
+            cat = categories[candidate] if categories else "General"
+            
+            # Category gating bounds (Hard cap per category)
+            if category_counts.get(cat, 0) < max_per_category:
+                selected.append(candidate)
+                category_counts[cat] = category_counts.get(cat, 0) + 1
+                found = True
+                break
+                
+        # If mathematically EVERY remaining far-point violates the thematic cap, 
+        # forcefully override the maximum constraint and capture the absolute furthest coordinate
+        if not found:
+            override_candidate = int(np.argmax(min_dist))
+            selected.append(override_candidate)
+            if categories:
+                override_cat = categories[override_candidate]
+                category_counts[override_cat] = category_counts.get(override_cat, 0) + 1
         
     return selected
 
@@ -482,8 +515,11 @@ def process_daily_gradient(articles: List[Dict[str, Any]], n_main: int = 8, n_re
         
     embeddings = np.array(data["embeddings"])
     
-    # Run FPS
-    main_indices = farthest_point_sampling(embeddings, k=min(n_main, len(embeddings)))
+    # Extract bounded metadata
+    all_categories = [data["metadatas"][i].get("category", "General") for i in range(len(ids))]
+    
+    # Run categorical capped FPS
+    main_indices = farthest_point_sampling(embeddings, k=min(n_main, len(embeddings)), categories=all_categories)
     
     briefing = []
     
@@ -496,6 +532,7 @@ def process_daily_gradient(articles: List[Dict[str, Any]], n_main: int = 8, n_re
             "id": main_id,
             "title": main_meta.get("title", ""),
             "body": main_meta.get("body", ""),
+            "category": main_meta.get("category", "General"),
             "url": main_meta.get("url", ""),
             "source": main_meta.get("source", ""),
             "publish_date": main_meta.get("publish_date", "")
@@ -529,6 +566,7 @@ def process_daily_gradient(articles: List[Dict[str, Any]], n_main: int = 8, n_re
                     "id": r_id,
                     "title": r_meta.get("title", ""),
                     "body": r_meta.get("body", ""),
+                    "category": r_meta.get("category", "General"),
                     "url": r_meta.get("url", ""),
                     "source": r_meta.get("source", ""),
                     "publish_date": r_meta.get("publish_date", "")

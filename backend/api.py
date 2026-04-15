@@ -24,6 +24,7 @@ def fetch_news(query: str, page_size: int = 50) -> List[Dict[str, Any]]:
         "articlesCount": min(page_size, 100),
         "articlesSortBy": "rel",
         "resultType": "articles",
+        "includeArticleCategories": True,
         "apiKey": NEWS_API_AI_KEY,
         "articleBodyLen": -1
     }
@@ -44,6 +45,16 @@ def fetch_news(query: str, page_size: int = 50) -> List[Dict[str, Any]]:
         title = article.get("title") or ""
         body = article.get("body") or ""
         
+        cats = article.get("categories", [])
+        category = "General"
+        if cats and len(cats) > 0:
+            c = cats[0]
+            if isinstance(c, dict):
+                category = str(c.get("label", c.get("uri", "General"))).split("/")[-1].replace("dmoz", "").replace("News", "").strip("_ ")
+            else:
+                category = str(c)
+        category = category if category else "General"
+        
         # We need at least some semantic content to work with
         if len(title.split()) > 3 or len(body.split()) > 10:
             uid = article.get("uri") or f"article-{idx}-{title[:10]}"
@@ -53,6 +64,7 @@ def fetch_news(query: str, page_size: int = 50) -> List[Dict[str, Any]]:
                 "id": uid,
                 "title": title,
                 "body": body,
+                "category": category,
                 "url": article.get("url"),
                 "source": source,
                 "publish_date": article.get("dateTimePub", ""),
@@ -77,6 +89,7 @@ def fetch_daily_gradient(page_size: int = 100) -> List[Dict[str, Any]]:
         "articlesCount": min(page_size, 100),
         "articlesSortBy": "date",
         "resultType": "articles",
+        "includeArticleCategories": True,
         "apiKey": NEWS_API_AI_KEY,
         "articleBodyLen": -1
     }
@@ -95,6 +108,16 @@ def fetch_daily_gradient(page_size: int = 100) -> List[Dict[str, Any]]:
         title = article.get("title") or ""
         body = article.get("body") or ""
         
+        cats = article.get("categories", [])
+        category = "General"
+        if cats and len(cats) > 0:
+            c = cats[0]
+            if isinstance(c, dict):
+                category = str(c.get("label", c.get("uri", "General"))).split("/")[-1].replace("dmoz", "").replace("News", "").strip("_ ")
+            else:
+                category = str(c)
+        category = category if category else "General"
+        
         if len(title.split()) > 3 or len(body.split()) > 10:
             uid = article.get("uri") or f"daily-{idx}-{title[:10]}"
             source = article.get("source", {}).get("title", "Unknown")
@@ -103,6 +126,7 @@ def fetch_daily_gradient(page_size: int = 100) -> List[Dict[str, Any]]:
                 "id": uid,
                 "title": title,
                 "body": body,
+                "category": category,
                 "url": article.get("url"),
                 "source": source,
                 "publish_date": article.get("dateTimePub", ""),
