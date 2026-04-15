@@ -381,3 +381,22 @@ def process_batch_cluster(
         "nds_scores": nds_scores,
         "is_local_summary": used_local_fallback
     }
+
+def get_article_by_id(article_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Fetches raw article details from Chroma DB for the Deep-Dive view.
+    """
+    data = collection.get(ids=[article_id], include=["metadatas", "documents"])
+    if not data["ids"]:
+        return None
+        
+    meta = data["metadatas"][0]
+    return {
+        "id": article_id,
+        "title": meta.get("title", "Unknown"),
+        "url": meta.get("url", ""),
+        "source": meta.get("source", ""),
+        "description": meta.get("description", ""),
+        "publish_date": meta.get("publish_date", ""),
+        "embed_text": data["documents"][0] if data["documents"] else ""
+    }

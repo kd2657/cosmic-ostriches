@@ -96,6 +96,7 @@ function ClusterContent() {
     return {
       x: clusterPoints.map(d => d.x),
       y: clusterPoints.map(d => d.y),
+      customdata: clusterPoints.map(d => d.id),
       type: "scatter",
       mode: "markers",
       name: clusterId === -1 ? "Noise (Unclustered)" : `Narrative ${clusterId + 1}`,
@@ -226,6 +227,14 @@ function ClusterContent() {
           <div className="absolute inset-0 w-full h-full z-0">
             <Plot
               data={plotData as any}
+              onClick={(e: any) => {
+                if (e.points && e.points.length > 0) {
+                  const articleId = e.points[0].customdata;
+                  const urlParams = new URLSearchParams({ q: query, algo: algorithm, dim: dimReduction });
+                  if (kValue !== "") urlParams.append("k", kValue.toString());
+                  router.push(`/article/${encodeURIComponent(articleId)}?${urlParams.toString()}`);
+                }
+              }}
               layout={{
                 autosize: true,
                 paper_bgcolor: 'transparent',
