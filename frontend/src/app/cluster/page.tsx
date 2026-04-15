@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
-import { ArrowLeft, Loader2, Settings2, Sparkles } from "lucide-react";
+import { ArrowLeft, Loader2, Settings2, Sparkles, Info } from "lucide-react";
 
 // Plotly needs to be loaded dynamically with ssr disabled
 const Plot = dynamic(() => import("react-plotly.js"), { 
@@ -19,9 +19,11 @@ function ClusterContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const query = searchParams.get("q") || "";
+  const localParam = searchParams.get("local") === "true";
   
   const [data, setData] = useState<any[]>([]);
   const [summaries, setSummaries] = useState<Record<string, string>>({});
+  const [ndsScores, setNdsScores] = useState<Record<string, number>>({});
   const [isLocalSummary, setIsLocalSummary] = useState(false);
   const [isOfflineCache, setIsOfflineCache] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -53,7 +55,7 @@ function ClusterContent() {
     setError("");
     
     try {
-      const payload: any = { query, algorithm: algo, dim_reduction: dimRed };
+      const payload: any = { query, algorithm: algo, dim_reduction: dimRed, force_local: localParam };
       if (k !== "") payload.k = k;
       
       const res = await fetch("http://localhost:8000/api/search", {
@@ -71,6 +73,7 @@ function ClusterContent() {
       if (json.status === "success") {
         setData(json.results.points || []);
         setSummaries(json.results.summaries || {});
+        setNdsScores(json.results.nds_scores || {});
         setIsLocalSummary(json.results.is_local_summary || false);
         setIsOfflineCache(json.results.is_offline_cache || false);
       } else {
@@ -117,10 +120,20 @@ function ClusterContent() {
     return {
       x: clusterPoints.map(d => d.x),
       y: clusterPoints.map(d => d.y),
+      customdata: clusterPoints.map(d => d.id),
       type: "scatter",
       mode: "markers",
       name: clusterId === -1 ? "Noise (Unclustered)" : `Narrative ${clusterId + 1}`,
-      text: clusterPoints.map(d => `<b>${d.source}</b><br>${d.title}`),
+      text: clusterPoints.map(d => {
+        let distHtml = "";
+        if (d.distance_from_center !== undefined && clusterId !== -1) {
+          const dist = d.distance_from_center;
+          if (dist < 0.2) distHtml = `<br><br><span style="color:#d9f99d;">🟢 Core article (Dist: ${dist})</span>`;
+          else if (dist < 0.4) distHtml = `<br><br><span style="color:#fef08a;">🟡 Typical article (Dist: ${dist})</span>`;
+          else distHtml = `<br><br><span style="color:#fca5a5;">🔴 Peripheral article (Dist: ${dist})</span>`;
+        }
+        return `<b>${d.source}</b><br>${d.title}${distHtml}`;
+      }),
       hoverinfo: "text",
       hoverlabel: { bgcolor: "#171717", font: { color: "white" }, align: "left" },
       marker: {
@@ -147,34 +160,40 @@ function ClusterContent() {
         <div className="flex items-center gap-4 bg-neutral-900 border border-neutral-800 p-2 rounded-xl">
           <div className="flex items-center gap-2 px-3 border-r border-neutral-800">
             <Settings2 className="w-4 h-4 text-neutral-400" />
+            <span className="text-sm text-neutral-400 hidden lg:inline-flex items-center gap-1 cursor-help" title="Controls how high-dimensional data is projected into 2D.">
+              Projection Method <Info className="w-3 h-3" />
+            </span>
             <select 
               value={dimReduction} 
               onChange={(e) => setDimReduction(e.target.value)}
               className="bg-transparent text-sm focus:outline-none cursor-pointer text-blue-400 font-medium pr-1"
             >
-              <option value="umap">UMAP</option>
-              <option value="tsne">t-SNE</option>
-              <option value="pca">PCA</option>
+              <option className="bg-neutral-900 text-white" value="umap" title="Good for exploring both local clusters and overall structure.">UMAP (Balanced)</option>
+              <option className="bg-neutral-900 text-white" value="tsne" title="Prioritizes distinct, separated local clusters.">t-SNE (Cluster-focused)</option>
+              <option className="bg-neutral-900 text-white" value="pca" title="Provides a quick, linear overview of main variances.">PCA (Overview)</option>
             </select>
           </div>
           
           <div className="flex items-center gap-2 px-3 border-r border-neutral-800">
+            <span className="text-sm text-neutral-400 hidden lg:inline-flex items-center gap-1 cursor-help" title="Algorithm to group similar articles into distinct narratives.">
+              Clustering Method <Info className="w-3 h-3" />
+            </span>
             <select 
               value={algorithm} 
               onChange={(e) => setAlgorithm(e.target.value)}
               className="bg-transparent text-sm focus:outline-none cursor-pointer pr-1"
             >
-              <option value="hdbscan">HDBSCAN (Auto)</option>
-              <option value="kmeans">K-Means</option>
-              <option value="gmm">GMM</option>
-              <option value="agglomerative">Agglomerative</option>
-              <option value="affinity">Affinity</option>
+              <option className="bg-neutral-900 text-white" value="hdbscan" title="Automatically finds groups of varying densities without choosing a number.">HDBSCAN (Automatic)</option>
+              <option className="bg-neutral-900 text-white" value="kmeans" title="Lets you control the exact number of narrative groups.">K-Means (Set group count)</option>
+              <option className="bg-neutral-900 text-white" value="gmm" title="Models groups probabilistically.">GMM</option>
+              <option className="bg-neutral-900 text-white" value="agglomerative" title="Builds groups hierarchically from bottom up.">Agglomerative</option>
+              <option className="bg-neutral-900 text-white" value="affinity" title="Creates groups by data points sending messages to each other.">Affinity</option>
             </select>
           </div>
           
           {(algorithm === "kmeans" || algorithm === "gmm" || algorithm === "agglomerative") && (
             <div className="flex items-center gap-2 px-2 border-r border-neutral-800">
-              <span className="text-sm text-neutral-400">k=</span>
+              <span className="text-sm text-neutral-400">Groups</span>
               <input 
                 type="number" 
                 min="2" max="20"
@@ -191,7 +210,7 @@ function ClusterContent() {
             disabled={loading}
             className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-sm rounded-lg font-medium transition-colors cursor-pointer disabled:opacity-50"
           >
-            Apply
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Update View"}
           </button>
         </div>
       </header>
@@ -238,6 +257,14 @@ function ClusterContent() {
           <div className="absolute inset-0 w-full h-full z-0">
             <Plot
               data={plotData as any}
+              onClick={(e: any) => {
+                if (e.points && e.points.length > 0) {
+                  const articleId = e.points[0].customdata;
+                  const urlParams = new URLSearchParams({ q: query, algo: algorithm, dim: dimReduction });
+                  if (kValue !== "") urlParams.append("k", kValue.toString());
+                  router.push(`/article/${encodeURIComponent(articleId)}?${urlParams.toString()}`);
+                }
+              }}
               layout={{
                 autosize: true,
                 paper_bgcolor: 'transparent',
@@ -295,6 +322,17 @@ function ClusterContent() {
                         <span className="font-bold text-blue-400 bg-blue-900/30 px-3 py-1 rounded border border-blue-900/50">
                           Narrative {clusterId + 1}
                         </span>
+                        {ndsScores[clusterId.toString()] !== undefined && (
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-bold border ${
+                            ndsScores[clusterId.toString()] < 0.3 
+                              ? 'bg-green-950/50 text-green-400 border-green-900/50' 
+                              : ndsScores[clusterId.toString()] < 0.6
+                                ? 'bg-yellow-950/50 text-yellow-500 border-yellow-900/50'
+                                : 'bg-red-950/50 text-red-400 border-red-900/50'
+                          }`} title={`Narrative Diversity Score: ${ndsScores[clusterId.toString()]} (higher means broader discourse)`}>
+                            NDS: {ndsScores[clusterId.toString()]}
+                          </span>
+                        )}
                       </div>
                       <p className="text-neutral-300 leading-relaxed font-medium pl-1">
                         {text}

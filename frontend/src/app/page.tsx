@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Loader2, BarChart2 } from "lucide-react";
+import { Search, Loader2, BarChart2, Compass, Layers, Database, WifiOff } from "lucide-react";
+import DailyGradient from "@/components/DailyGradient";
 
 type ArticleSentiment = {
   label: string;
@@ -22,6 +23,8 @@ type Article = {
 
 function BackgroundBlobs() {
   const blobRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const vectorRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const maskLayerRef = useRef<HTMLDivElement | null>(null);
   const mouseRef = useRef({ x: 0, y: 0, active: false });
 
   useEffect(() => {
@@ -48,8 +51,27 @@ function BackgroundBlobs() {
       { id: 4, color: "bg-teal-600/20",   cx: 0.2, cy: 0.8, r: 250, speed: 0.0011, offset: 5 },
       { id: 5, color: "bg-indigo-600/20", cx: 0.5, cy: 0.5, r: 400, speed: 0.0008, offset: 1 },
     ];
+    const vectors = Array.from({ length: 40 }).map((_, i) => ({
+      id: i + 1,
+      cx: 0.05 + Math.random() * 0.9,
+      cy: 0.05 + Math.random() * 0.9,
+      speed: 0.0003 + Math.random() * 0.0005,
+      offset: Math.random() * Math.PI * 2,
+      text: `[${(Math.random() * 2 - 1).toFixed(3)}, ${(Math.random() * 2 - 1).toFixed(3)}]`
+    }));
+
+    vectorRefs.current.forEach((el, index) => {
+       if (el && vectors[index]) {
+          el.textContent = vectors[index].text;
+       }
+    });
 
     const currentPositions = blobs.map(b => ({ x: b.cx * window.innerWidth, y: b.cy * window.innerHeight }));
+    const vectorPositions = vectors.map(v => ({ x: v.cx * window.innerWidth, y: v.cy * window.innerHeight }));
+    
+    let maskX = mouseRef.current.x;
+    let maskY = mouseRef.current.y;
+    let maskO = 0;
 
     const animate = (time: number) => {
       blobRefs.current.forEach((el, index) => {
@@ -87,6 +109,30 @@ function BackgroundBlobs() {
         // Bypassing React's render loop saves critical frames!
         el.style.transform = `translate(${currentPositions[index].x - b.r}px, ${currentPositions[index].y - b.r}px)`;
       });
+
+      vectorRefs.current.forEach((el, index) => {
+        if (!el || !vectors[index]) return;
+        const v = vectors[index];
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        const floatX = (v.cx * w) + Math.sin(time * v.speed * 1.2 + v.offset) * 40;
+        const floatY = (v.cy * h) + Math.cos(time * v.speed * 1.2 + v.offset) * 40;
+        vectorPositions[index].x += (floatX - vectorPositions[index].x) * 0.02;
+        vectorPositions[index].y += (floatY - vectorPositions[index].y) * 0.02;
+        el.style.transform = `translate(${vectorPositions[index].x}px, ${vectorPositions[index].y}px)`;
+      });
+
+      maskX += (mouseRef.current.x - maskX) * 0.1;
+      maskY += (mouseRef.current.y - maskY) * 0.1;
+      maskO += ((mouseRef.current.active ? 1 : 0) - maskO) * 0.05;
+      
+      if (maskLayerRef.current) {
+        maskLayerRef.current.style.opacity = maskO.toString();
+        const maskGrad = `radial-gradient(circle 600px at ${maskX}px ${maskY}px, black 0%, transparent 100%)`;
+        maskLayerRef.current.style.setProperty('-webkit-mask-image', maskGrad);
+        maskLayerRef.current.style.setProperty('mask-image', maskGrad);
+      }
+
       animationFrameId = requestAnimationFrame(animate);
     };
 
@@ -102,6 +148,19 @@ function BackgroundBlobs() {
 
   return (
     <div className="fixed top-0 left-0 w-full h-full overflow-hidden z-0 pointer-events-none">
+      <div ref={maskLayerRef} className="absolute inset-0 z-10 pointer-events-none transition-opacity duration-300" style={{ opacity: 0 }}>
+         <div className="absolute inset-0 z-0 opacity-[0.08]" style={{ backgroundImage: 'linear-gradient(rgba(255, 255, 255, 1) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 1) 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
+         {Array.from({ length: 40 }).map((_, i) => (
+            <div
+              key={`vec-${i}`}
+              ref={(el) => {
+                if (el) vectorRefs.current[i] = el;
+              }}
+              className="absolute top-0 left-0 text-neutral-700/60 font-mono text-[10px] sm:text-xs tracking-widest whitespace-nowrap transition-none will-change-transform font-bold"
+            ></div>
+         ))}
+      </div>
+
       {[
         { id: 1, color: "bg-blue-600/20",   r: 250 },
         { id: 2, color: "bg-purple-600/20", r: 350 },
@@ -129,6 +188,8 @@ export default function Home() {
   const [searchedQuery, setSearchedQuery] = useState("");
   const [isOfflineCache, setIsOfflineCache] = useState(false);
   const [backendReady, setBackendReady] = useState(false);
+  const [activeTab, setActiveTab] = useState<"search" | "gradient">("search");
+  const [localMode, setLocalMode] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -163,7 +224,7 @@ export default function Home() {
       const res = await fetch("http://localhost:8000/api/articles", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query })
+        body: JSON.stringify({ query, force_local: localMode })
       });
       if (!res.ok) throw new Error("Fetch failed");
       const json = await res.json();
@@ -181,6 +242,17 @@ export default function Home() {
     <div className="min-h-screen bg-neutral-950 flex flex-col items-center py-20 px-4 relative overflow-hidden">
       <BackgroundBlobs />
 
+      <div className="absolute top-4 right-4 z-50 animate-in fade-in slide-in-from-top-4 duration-500">
+         <button 
+            onClick={() => setLocalMode(!localMode)}
+            title="Local Mode disables the NewsAPI text fetcher entirely and routes search/exploration explicitly through the local ChromeDB vector embeddings."
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-[10px] sm:text-xs font-medium transition-all shadow-md backdrop-blur-md ${localMode ? 'bg-amber-500/10 text-amber-500 border-amber-500/40 shadow-[0_0_10px_rgba(245,158,11,0.2)]' : 'bg-neutral-900/30 text-neutral-500 border-neutral-800/50 hover:text-neutral-400'}`}
+         >
+            {localMode ? <WifiOff className="w-3 h-3" /> : <Database className="w-3 h-3" />}
+            {localMode ? "LOCAL MODE: ON" : "LOCAL MODE: OFF"}
+         </button>
+      </div>
+
       {isOfflineCache && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-top-4 fade-in duration-400">
           <div className="bg-yellow-950 border border-yellow-700 text-yellow-500 px-4 py-2 rounded-full shadow-2xl text-sm flex items-center gap-3 whitespace-nowrap font-medium pointer-events-auto">
@@ -190,18 +262,35 @@ export default function Home() {
         </div>
       )}
 
-      <div className={`z-10 w-full max-w-3xl text-center space-y-8 transition-all duration-500 ${articles.length > 0 ? 'mt-0' : 'mt-[20vh]'}`}>
-        <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight text-white mb-4">
-          The Local <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">Minima</span>
+      <div className={`z-10 w-full max-w-3xl text-center space-y-8 transition-all duration-500 ${articles.length > 0 || activeTab === 'gradient' ? 'mt-0' : 'mt-[20vh]'}`}>
+        <h1 className="text-6xl md:text-8xl lg:text-[7rem] font-extrabold tracking-tighter text-white mb-6 relative group inline-block whitespace-nowrap">
+          The Local{" "}
+          <span className="relative inline-block text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-500 to-purple-500 transition-all duration-700 ease-out group-hover:drop-shadow-[0_0_35px_rgba(99,102,241,0.8)] group-hover:scale-[0.96] group-hover:translate-y-1">
+            Minima
+          </span>
         </h1>
-        {articles.length === 0 && (
+        {articles.length === 0 && activeTab === 'search' && (
           <p className="text-lg text-neutral-400 max-w-xl mx-auto">
             Enter a topic and uncover the narratives across today's news.
           </p>
         )}
 
-        <form onSubmit={handleSearch} className="relative mt-8 w-full mx-auto">
-          <div className="relative flex items-center">
+        <div className="flex justify-center gap-4 mt-8 slide-in-from-bottom-4 animate-in fade-in duration-500">
+           <button onClick={() => setActiveTab("search")} className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 ${activeTab === 'search' ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}>
+              <Layers className="w-5 h-5" /> News Clusters
+           </button>
+           <button 
+              onClick={() => setActiveTab("gradient")} 
+              disabled={!backendReady}
+              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${activeTab === 'gradient' ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
+           >
+              {backendReady ? <Compass className="w-5 h-5" /> : <Loader2 className="w-5 h-5 animate-spin" />} Daily Gradient
+           </button>
+        </div>
+
+        {activeTab === "search" && (
+          <form onSubmit={handleSearch} className="relative mt-8 w-full mx-auto animate-in fade-in duration-500">
+            <div className="relative flex items-center">
             <input
               type="text"
               value={query}
@@ -220,11 +309,12 @@ export default function Home() {
             </button>
           </div>
         </form>
+        )}
         
-        {articles.length > 0 && (
+        {activeTab === "search" && articles.length > 0 && (
           <div className="mt-8 flex justify-center animate-in fade-in slide-in-from-bottom-4 duration-700">
             <button
-               onClick={() => router.push(`/cluster?q=${encodeURIComponent(searchedQuery)}`)}
+               onClick={() => router.push(`/cluster?q=${encodeURIComponent(searchedQuery)}&local=${localMode}`)}
                className="px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold rounded-xl shadow-lg transition-transform hover:scale-105 flex items-center gap-2 cursor-pointer"
             >
                <BarChart2 className="w-5 h-5" />
@@ -234,7 +324,7 @@ export default function Home() {
         )}
       </div>
 
-      {articles.length > 0 && (
+      {activeTab === "search" && articles.length > 0 && (
         <div className="z-10 w-full max-w-3xl mt-12 space-y-4 pb-20 animate-in fade-in duration-500">
           <h2 className="text-2xl font-bold text-white mb-6 border-b border-neutral-800 pb-2 flex justify-between items-end">
             <span>Fetched Articles</span>
@@ -252,7 +342,7 @@ export default function Home() {
                     {a.match_score}% Match
                   </div>
                 </div>
-                <p className="text-neutral-400 text-sm mb-3 line-clamp-3">{a.description}</p>
+                <p className="text-neutral-400 text-sm mb-3 line-clamp-3">{(a.body || "").slice(0, 300)}...</p>
                 <div className="text-xs text-neutral-500 uppercase flex flex-wrap items-center gap-2">
                    <span className="font-bold text-neutral-300 bg-neutral-800 px-2 py-0.5 rounded-sm">{a.source}</span>
                    {a.publish_date && <span>• {new Date(a.publish_date).toLocaleDateString()}</span>}
@@ -278,6 +368,8 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {activeTab === "gradient" && <DailyGradient localMode={localMode} />}
     </div>
   );
 }
