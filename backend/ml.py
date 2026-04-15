@@ -31,7 +31,7 @@ summarizer = pipeline("text-generation", model="distilgpt2")
 CHROMA_PATH = os.path.join(os.path.dirname(__file__), "chroma_db")
 os.makedirs(CHROMA_PATH, exist_ok=True)
 chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
-collection = chroma_client.get_or_create_collection(name="news_narratives")
+collection = chroma_client.get_or_create_collection(name="news_diversity_v3_collection")
 
 def vectorize_and_store(articles: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
@@ -53,7 +53,8 @@ def vectorize_and_store(articles: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "title": a["title"],
             "url": a.get("url", ""),
             "source": a.get("source", ""),
-            "description": a.get("description", ""),
+            "body": a.get("body", ""),
+            "category": a.get("category", "General"),
             "publish_date": a.get("publish_date", "")
         } for a in new_articles]
         
@@ -269,29 +270,9 @@ def process_batch_cluster(
 
     # Build response points
     results = []
-    cluster_titles = {}
-    for idx, article_id in enumerate(ids):
-        meta = data["metadatas"][idx]
-        cluster_id = int(labels[idx])
-        
-        # Accumulate titles for AI summary
-        if cluster_id not in cluster_titles:
-            cluster_titles[cluster_id] = []
-        cluster_titles[cluster_id].append(meta.get("title", ""))
-            
-        results.append({
-            "id": article_id,
-            "title": meta.get("title", "Unknown"),
-            "url": meta.get("url", ""),
-            "source": meta.get("source", ""),
-            "description": meta.get("description", ""),
-            "cluster": cluster_id,
-            "x": float(reduced_embeddings[idx][0]),
-            "y": float(reduced_embeddings[idx][1]),
-            "distance_from_center": round(float(article_distances[idx]), 3) if cluster_id != -1 else 0.0
-        })
-        
-    # Hybrid Gemini / Local Auto-Summarization
+    cluster_texts = {}
+    
+    # Hybrid Gemini / Local Auto-Summarization Key detection
     gemini_key = os.getenv("GEMINI_API_KEY")
     client = None
     if gemini_key:
@@ -301,25 +282,55 @@ def process_batch_cluster(
             pass
 
     used_local_fallback = False if client else True
-    used_local_fallback = False if client else True
+    
+    for idx, article_id in enumerate(ids):
+        meta = data["metadatas"][idx]
+        cluster_id = int(labels[idx])
+        
+        if cluster_id not in cluster_texts:
+            cluster_texts[cluster_id] = []
+            
+        t = meta.get("title", "")
+        b = meta.get("body", "")
+        
+        # Chunk logic based on API constraints
+        if b:
+            chunk = b[:2500] if client else b[:200]
+            cluster_texts[cluster_id].append(f"{t}: {chunk}")
+        else:
+            cluster_texts[cluster_id].append(t)
+            
+        results.append({
+            "id": article_id,
+            "title": meta.get("title", "Unknown"),
+            "url": meta.get("url", ""),
+            "source": meta.get("source", ""),
+            "body": meta.get("body", ""),
+            "cluster": cluster_id,
+            "x": float(reduced_embeddings[idx][0]),
+            "y": float(reduced_embeddings[idx][1]),
+            "distance_from_center": round(float(article_distances[idx]), 3) if cluster_id != -1 else 0.0
+        })
+        
     summaries = {}
     cluster_strings = ""
     target_clusters = []
     
-    for cluster_id, titles in cluster_titles.items():
+    for cluster_id, texts in cluster_texts.items():
         if cluster_id == -1:
             summaries[str(cluster_id)] = "Unclustered noise and outlier narratives."
             continue
         
-        top_titles_str = ". ".join(titles[:5])
-        cluster_strings += f"Cluster {cluster_id}:\n{top_titles_str}\n\n"
+        # Pass up to 5 full text chunks for AI analysis
+        top_texts_str = "\n---\n".join(texts[:5])
+        cluster_strings += f"Cluster {cluster_id}:\n{top_texts_str}\n\n"
         target_clusters.append(cluster_id)
         
     summary_generated = False
     
     if client and target_clusters:
         try:
-            prompt = f"You are an analytical AI bot. Read the following sets of news headlines grouped by cluster. Synthesize and summarize the main narrative connecting each cluster into a clear, concise paragraph without strict limits. Highlight any notable differences between each cluster. Avoid using the word 'cluster' in your response. Return your response STRICTLY as a valid JSON object where each KEY is the plain cluster number as a string (e.g. \"0\", \"1\", \"2\") and each VALUE is the summary paragraph. Ensure all text values are properly escaped and contain absolutely NO literal newlines. \n\n{cluster_strings}"
+            prompt = f"You are an analytical AI bot. Read the following sets of news reporting grouped by cluster. Synthesize and summarize the main narrative connecting each cluster into a clear, concise paragraph without strict limits. Highlight any notable differences between each cluster. Avoid using the word 'cluster' in your response. Return your response STRICTLY as a valid JSON object where each KEY is the plain cluster number as a string (e.g. \"0\", \"1\", \"2\") and each VALUE is the summary paragraph. Ensure all text values are properly escaped and contain absolutely NO literal newlines. \n\n{cluster_strings}"
             
             response = client.models.generate_content(
                 model='gemini-2.5-flash',
@@ -356,8 +367,9 @@ def process_batch_cluster(
             
     if not summary_generated:
         for cid in target_clusters:
-            top_titles_str = ". ".join(cluster_titles[cid][:5])
-            prompt = f"Summarize the main common theme of these news headlines in one short sentence:\n{top_titles_str}\n\nSummary:"
+            # Only pass a severely truncated subset of the first headline text block for GPT2 logic
+            input_text = cluster_texts[cid][0][:100] if cluster_texts.get(cid) else "Global news."
+            prompt = f"Summarize the context: {input_text}"
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 out = summarizer(
@@ -382,21 +394,199 @@ def process_batch_cluster(
         "is_local_summary": used_local_fallback
     }
 
-def get_article_by_id(article_id: str) -> Optional[Dict[str, Any]]:
+def farthest_point_sampling(embeddings: np.ndarray, k: int, categories: List[str] = None, max_per_category: int = 2) -> List[int]:
     """
-    Fetches raw article details from Chroma DB for the Deep-Dive view.
+    Selects k points from embeddings that are farthest apart.
+    Implemented deterministically from scratch to maximize diversity.
+    Optionally dynamically enforces categorical ceilings to prevent thematic saturation.
     """
-    data = collection.get(ids=[article_id], include=["metadatas", "documents"])
-    if not data["ids"]:
-        return None
+    n = len(embeddings)
+    if n <= k:
+        return list(range(n))
+    
+    # 1. Start with the index furthest from the global centroid
+    centroid = np.mean(embeddings, axis=0)
+    distances_to_centroid = np.linalg.norm(embeddings - centroid, axis=1)
+    
+    first_selected = int(np.argmax(distances_to_centroid))
+    selected = [first_selected]
+    
+    # Setup categorical limit trackers
+    category_counts = {}
+    if categories:
+        first_cat = categories[first_selected]
+        category_counts[first_cat] = 1
         
-    meta = data["metadatas"][0]
-    return {
-        "id": article_id,
-        "title": meta.get("title", "Unknown"),
-        "url": meta.get("url", ""),
-        "source": meta.get("source", ""),
-        "description": meta.get("description", ""),
-        "publish_date": meta.get("publish_date", ""),
-        "embed_text": data["documents"][0] if data["documents"] else ""
-    }
+    # Maintain the minimum distance from each point to the selected set
+    min_dist = np.full(n, np.inf)
+    
+    # 2. Iteratively pick the point that maximizes the minimum distance to existing selected points
+    for _ in range(1, k):
+        last_selected_emb = embeddings[selected[-1]]
+        dist_to_last = np.linalg.norm(embeddings - last_selected_emb, axis=1)
+        min_dist = np.minimum(min_dist, dist_to_last)
+        
+        # We don't want to re-select
+        min_dist[selected] = -1.0
+        
+        # Try to find furthest unmapped boundary adhering to category cap constraints
+        sorted_indices = np.argsort(min_dist)[::-1]
+        found = False
+        
+        for candidate in sorted_indices:
+            if min_dist[candidate] < 0:
+                break # Since properties track descending, -1 denotes exhaustion of usable pools
+                
+            cat = categories[candidate] if categories else "General"
+            
+            # Category gating bounds (Hard cap per category)
+            if category_counts.get(cat, 0) < max_per_category:
+                selected.append(candidate)
+                category_counts[cat] = category_counts.get(cat, 0) + 1
+                found = True
+                break
+                
+        # If mathematically EVERY remaining far-point violates the thematic cap, 
+        # forcefully override the maximum constraint and capture the absolute furthest coordinate
+        if not found:
+            override_candidate = int(np.argmax(min_dist))
+            selected.append(override_candidate)
+            if categories:
+                override_cat = categories[override_candidate]
+                category_counts[override_cat] = category_counts.get(override_cat, 0) + 1
+        
+    return selected
+
+def maximal_marginal_relevance(query_embedding: np.ndarray, doc_embeddings: np.ndarray, top_k: int, lambda_param: float = 0.5) -> List[int]:
+    """
+    Retrieves top_k related articles balancing cosine similarity to query (relevance) 
+    and dissimilarity to already selected articles (diversity).
+    Implemented from scratch using NumPy.
+    """
+    n = len(doc_embeddings)
+    if n == 0:
+        return []
+    
+    target_k = min(top_k, n)
+    selected = []
+    unselected = list(range(n))
+    
+    # Compute cosine similarity bounds precisely
+    q_norm = np.linalg.norm(query_embedding) + 1e-9
+    doc_norms = np.linalg.norm(doc_embeddings, axis=1) + 1e-9
+    
+    # sim_to_query: shape (n,)
+    sim_to_query = np.dot(doc_embeddings, query_embedding) / (doc_norms * q_norm)
+    
+    for _ in range(target_k):
+        if not unselected:
+            break
+            
+        if not selected:
+            # First item is purely the most relevant
+            best_idx = unselected[np.argmax(sim_to_query[unselected])]
+        else:
+            # MMR formula
+            unselected_embs = doc_embeddings[unselected]
+            selected_embs = doc_embeddings[selected]
+            
+            # sim_to_selected: shape (len(unselected), len(selected))
+            un_norms = doc_norms[unselected]
+            sel_norms = doc_norms[selected]
+            sim_matrix = np.dot(unselected_embs, selected_embs.T) / (un_norms[:, None] * sel_norms[None, :])
+            
+            # For diversity, we care about the max similarity to ANY already selected doc
+            max_sim_to_selected = np.max(sim_matrix, axis=1)
+            
+            mmr_scores = lambda_param * sim_to_query[unselected] - (1.0 - lambda_param) * max_sim_to_selected
+            best_idx_in_unselected = np.argmax(mmr_scores)
+            best_idx = unselected[best_idx_in_unselected]
+            
+        selected.append(best_idx)
+        unselected.remove(best_idx)
+        
+    return selected
+
+def process_daily_gradient(articles: List[Dict[str, Any]], n_main: int = 8, n_related: int = 4) -> List[Dict[str, Any]]:
+    """
+    Main orchestrator for the backend math of the daily gradient.
+    Vectorizes local articles, clusters by FPS, and populates by MMR.
+    """
+    if not articles:
+        return []
+        
+    # Get all embeddings via collection
+    ids = [a["id"] for a in articles]
+    data = collection.get(ids=ids, include=["embeddings", "metadatas"])
+    
+    if data.get("embeddings") is None or len(data["embeddings"]) == 0:
+        return []
+        
+    embeddings = np.array(data["embeddings"])
+    
+    # Extract bounded metadata
+    all_categories = [data["metadatas"][i].get("category", "General") for i in range(len(ids))]
+    
+    # Run categorical capped FPS
+    main_indices = farthest_point_sampling(embeddings, k=min(n_main, len(embeddings)), categories=all_categories)
+    
+    briefing = []
+    
+    for m_idx in main_indices:
+        main_id = ids[m_idx]
+        main_meta = data["metadatas"][m_idx]
+        main_emb = embeddings[m_idx]
+        
+        main_article = {
+            "id": main_id,
+            "title": main_meta.get("title", ""),
+            "body": main_meta.get("body", ""),
+            "category": main_meta.get("category", "General"),
+            "url": main_meta.get("url", ""),
+            "source": main_meta.get("source", ""),
+            "publish_date": main_meta.get("publish_date", "")
+        }
+        
+        # We need docs excluding the main article to avoid choosing it again
+        # Actually MMR will just not select from unselected docs, but it's easier to just pass everything and 
+        # remove the m_idx from the pool manually, or let MMR handle it.
+        # But wait, MMR as written takes a document pool. Let's pass the whole pool, then filter it from the return list if it selects itself.
+        # Better: pass the pool excluding the main article.
+        pool_mask = np.ones(len(embeddings), dtype=bool)
+        pool_mask[m_idx] = False
+        
+        pool_indices = np.where(pool_mask)[0]
+        pool_embeddings = embeddings[pool_indices]
+        
+        if len(pool_embeddings) > 0:
+            related_local_indices = maximal_marginal_relevance(
+                query_embedding=main_emb,
+                doc_embeddings=pool_embeddings,
+                top_k=n_related,
+                lambda_param=0.6  # Balance relevance and diversity
+            )
+            
+            related_articles = []
+            for r_local_idx in related_local_indices:
+                global_idx = pool_indices[r_local_idx]
+                r_id = ids[global_idx]
+                r_meta = data["metadatas"][global_idx]
+                related_articles.append({
+                    "id": r_id,
+                    "title": r_meta.get("title", ""),
+                    "body": r_meta.get("body", ""),
+                    "category": r_meta.get("category", "General"),
+                    "url": r_meta.get("url", ""),
+                    "source": r_meta.get("source", ""),
+                    "publish_date": r_meta.get("publish_date", "")
+                })
+        else:
+            related_articles = []
+            
+        briefing.append({
+            "main_article": main_article,
+            "related_articles": related_articles
+        })
+        
+    return briefing
+
