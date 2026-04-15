@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
-import { ArrowLeft, Loader2, Settings2, Sparkles } from "lucide-react";
+import { ArrowLeft, Loader2, Settings2, Sparkles, Info } from "lucide-react";
 
 // Plotly needs to be loaded dynamically with ssr disabled
 const Plot = dynamic(() => import("react-plotly.js"), { 
@@ -136,34 +136,40 @@ function ClusterContent() {
         <div className="flex items-center gap-4 bg-neutral-900 border border-neutral-800 p-2 rounded-xl">
           <div className="flex items-center gap-2 px-3 border-r border-neutral-800">
             <Settings2 className="w-4 h-4 text-neutral-400" />
+            <span className="text-sm text-neutral-400 hidden lg:inline-flex items-center gap-1 cursor-help" title="Controls how high-dimensional data is projected into 2D.">
+              Projection Method <Info className="w-3 h-3" />
+            </span>
             <select 
               value={dimReduction} 
               onChange={(e) => setDimReduction(e.target.value)}
               className="bg-transparent text-sm focus:outline-none cursor-pointer text-blue-400 font-medium pr-1"
             >
-              <option value="umap">UMAP</option>
-              <option value="tsne">t-SNE</option>
-              <option value="pca">PCA</option>
+              <option className="bg-neutral-900 text-white" value="umap" title="Good for exploring both local clusters and overall structure.">UMAP (Balanced)</option>
+              <option className="bg-neutral-900 text-white" value="tsne" title="Prioritizes distinct, separated local clusters.">t-SNE (Cluster-focused)</option>
+              <option className="bg-neutral-900 text-white" value="pca" title="Provides a quick, linear overview of main variances.">PCA (Overview)</option>
             </select>
           </div>
           
           <div className="flex items-center gap-2 px-3 border-r border-neutral-800">
+            <span className="text-sm text-neutral-400 hidden lg:inline-flex items-center gap-1 cursor-help" title="Algorithm to group similar articles into distinct narratives.">
+              Clustering Method <Info className="w-3 h-3" />
+            </span>
             <select 
               value={algorithm} 
               onChange={(e) => setAlgorithm(e.target.value)}
               className="bg-transparent text-sm focus:outline-none cursor-pointer pr-1"
             >
-              <option value="hdbscan">HDBSCAN (Auto)</option>
-              <option value="kmeans">K-Means</option>
-              <option value="gmm">GMM</option>
-              <option value="agglomerative">Agglomerative</option>
-              <option value="affinity">Affinity</option>
+              <option className="bg-neutral-900 text-white" value="hdbscan" title="Automatically finds groups of varying densities without choosing a number.">HDBSCAN (Automatic)</option>
+              <option className="bg-neutral-900 text-white" value="kmeans" title="Lets you control the exact number of narrative groups.">K-Means (Set group count)</option>
+              <option className="bg-neutral-900 text-white" value="gmm" title="Models groups probabilistically.">GMM</option>
+              <option className="bg-neutral-900 text-white" value="agglomerative" title="Builds groups hierarchically from bottom up.">Agglomerative</option>
+              <option className="bg-neutral-900 text-white" value="affinity" title="Creates groups by data points sending messages to each other.">Affinity</option>
             </select>
           </div>
           
           {(algorithm === "kmeans" || algorithm === "gmm" || algorithm === "agglomerative") && (
             <div className="flex items-center gap-2 px-2 border-r border-neutral-800">
-              <span className="text-sm text-neutral-400">k=</span>
+              <span className="text-sm text-neutral-400">Groups</span>
               <input 
                 type="number" 
                 min="2" max="20"
@@ -180,7 +186,7 @@ function ClusterContent() {
             disabled={loading}
             className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-sm rounded-lg font-medium transition-colors cursor-pointer disabled:opacity-50"
           >
-            Apply
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Update View"}
           </button>
         </div>
       </header>
