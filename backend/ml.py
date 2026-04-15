@@ -1,4 +1,6 @@
 import os
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import chromadb
 from umap import UMAP
 from sentence_transformers import SentenceTransformer, util
@@ -262,6 +264,9 @@ def process_batch_cluster(
             reducer = UMAP(n_neighbors=n_neighbors, min_dist=0.1, n_components=2, random_state=42)
             reduced_embeddings = reducer.fit_transform(embeddings)
 
+    from models.metrics import compute_article_distances_from_center
+    article_distances = compute_article_distances_from_center(embeddings, np.array(labels))
+
     # Build response points
     results = []
     cluster_titles = {}
@@ -282,7 +287,8 @@ def process_batch_cluster(
             "description": meta.get("description", ""),
             "cluster": cluster_id,
             "x": float(reduced_embeddings[idx][0]),
-            "y": float(reduced_embeddings[idx][1])
+            "y": float(reduced_embeddings[idx][1]),
+            "distance_from_center": round(float(article_distances[idx]), 3) if cluster_id != -1 else 0.0
         })
         
     # Hybrid Gemini / Local Auto-Summarization
@@ -366,10 +372,13 @@ def process_batch_cluster(
             if "\n" in generated: 
                 generated = generated.split("\n")[0]
             summaries[str(cid)] = generated
+    from models.metrics import compute_narrative_diversity_score
+    nds_scores = compute_narrative_diversity_score(embeddings, np.array(labels))
             
     return {
         "points": results, 
         "summaries": summaries,
+        "nds_scores": nds_scores,
         "is_local_summary": used_local_fallback
     }
 

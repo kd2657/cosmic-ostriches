@@ -22,6 +22,7 @@ function ClusterContent() {
   
   const [data, setData] = useState<any[]>([]);
   const [summaries, setSummaries] = useState<Record<string, string>>({});
+  const [ndsScores, setNdsScores] = useState<Record<string, number>>({});
   const [isLocalSummary, setIsLocalSummary] = useState(false);
   const [isOfflineCache, setIsOfflineCache] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -52,6 +53,7 @@ function ClusterContent() {
       if (json.status === "success") {
         setData(json.results.points || []);
         setSummaries(json.results.summaries || {});
+        setNdsScores(json.results.nds_scores || {});
         setIsLocalSummary(json.results.is_local_summary || false);
         setIsOfflineCache(json.results.is_offline_cache || false);
       } else {
@@ -99,9 +101,14 @@ function ClusterContent() {
       mode: "markers",
       name: clusterId === -1 ? "Noise (Unclustered)" : `Narrative ${clusterId + 1}`,
       text: clusterPoints.map(d => {
-        let desc = d.description || "";
-        if (desc.length > 80) desc = desc.slice(0, 80) + "...";
-        return `<b>${d.source}</b><br>${d.title}<br><i style="color:#a3a3a3;">${desc}</i><br><br><span style="color:#60a5fa;">(Click point to read full article)</span>`;
+        let distHtml = "";
+        if (d.distance_from_center !== undefined && clusterId !== -1) {
+          const dist = d.distance_from_center;
+          if (dist < 0.2) distHtml = `<br><br><span style="color:#d9f99d;">🟢 Core article (Dist: ${dist})</span>`;
+          else if (dist < 0.4) distHtml = `<br><br><span style="color:#fef08a;">🟡 Typical article (Dist: ${dist})</span>`;
+          else distHtml = `<br><br><span style="color:#fca5a5;">🔴 Peripheral article (Dist: ${dist})</span>`;
+        }
+        return `<b>${d.source}</b><br>${d.title}${distHtml}`;
       }),
       hoverinfo: "text",
       hoverlabel: { bgcolor: "#171717", font: { color: "white" }, align: "left" },
@@ -285,6 +292,17 @@ function ClusterContent() {
                         <span className="font-bold text-blue-400 bg-blue-900/30 px-3 py-1 rounded border border-blue-900/50">
                           Narrative {clusterId + 1}
                         </span>
+                        {ndsScores[clusterId.toString()] !== undefined && (
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-bold border ${
+                            ndsScores[clusterId.toString()] < 0.3 
+                              ? 'bg-green-950/50 text-green-400 border-green-900/50' 
+                              : ndsScores[clusterId.toString()] < 0.6
+                                ? 'bg-yellow-950/50 text-yellow-500 border-yellow-900/50'
+                                : 'bg-red-950/50 text-red-400 border-red-900/50'
+                          }`} title={`Narrative Diversity Score: ${ndsScores[clusterId.toString()]} (higher means broader discourse)`}>
+                            NDS: {ndsScores[clusterId.toString()]}
+                          </span>
+                        )}
                       </div>
                       <p className="text-neutral-300 leading-relaxed font-medium pl-1">
                         {text}
