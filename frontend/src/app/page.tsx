@@ -5,6 +5,22 @@ import { useRouter } from "next/navigation";
 import { Search, Loader2, BarChart2, Compass, Layers, Database, WifiOff } from "lucide-react";
 import DailyGradient from "@/components/DailyGradient";
 
+type ArticleSentiment = {
+  label: string;
+  sentiment: string;
+  confidence: number;
+  scores: Record<string, number>;
+};
+
+type Article = {
+  title: string;
+  description: string;
+  source?: string;
+  publish_date?: string;
+  match_score: number;
+  sentiment?: ArticleSentiment | null;
+};
+
 function BackgroundBlobs() {
   const blobRefs = useRef<(HTMLDivElement | null)[]>([]);
   const vectorRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -168,7 +184,7 @@ function BackgroundBlobs() {
 export default function Home() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
-  const [articles, setArticles] = useState<any[]>([]);
+  const [articles, setArticles] = useState<Article[]>([]);
   const [searchedQuery, setSearchedQuery] = useState("");
   const [isOfflineCache, setIsOfflineCache] = useState(false);
   const [backendReady, setBackendReady] = useState(false);
@@ -316,7 +332,7 @@ export default function Home() {
           </h2>
           
           <div className="grid gap-4">
-            {articles.map((a: any, i: number) => (
+            {articles.map((a, i) => (
               <div key={i} className="bg-neutral-900/60 border border-neutral-800 rounded-xl p-5 hover:bg-neutral-800/80 transition-colors backdrop-blur-md">
                 <div className="flex justify-between items-start gap-4 mb-3">
                   <h3 className="text-lg font-semibold text-neutral-100 leading-tight">
@@ -331,6 +347,22 @@ export default function Home() {
                    <span className="font-bold text-neutral-300 bg-neutral-800 px-2 py-0.5 rounded-sm">{a.source}</span>
                    {a.publish_date && <span>• {new Date(a.publish_date).toLocaleDateString()}</span>}
                 </div>
+                {a.sentiment && (
+                  <div className="mt-4 pt-3 border-t border-neutral-800 flex items-center justify-between gap-3">
+                    <span
+                      className={`text-xs font-bold px-2.5 py-1 rounded-full border ${
+                        a.sentiment.sentiment === "positive"
+                          ? "bg-emerald-950/70 text-emerald-300 border-emerald-800"
+                          : "bg-red-950/70 text-red-300 border-red-800"
+                      }`}
+                    >
+                      {a.sentiment.label}
+                    </span>
+                    <span className="text-xs text-neutral-400">
+                      Sentiment confidence: {(a.sentiment.confidence * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                )}
               </div>
             ))}
           </div>

@@ -17,10 +17,14 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
+from api import fetch_news
+from ml import vectorize_and_store, process_batch_cluster, query_local_database, compute_similarity_scores
+from sentiment import SentimentClassifier
 from api import fetch_news, fetch_daily_gradient
 from ml import vectorize_and_store, process_batch_cluster, query_local_database, compute_similarity_scores, process_daily_gradient
 
 app = FastAPI(title="The Local Minima API")
+sentiment_classifier = SentimentClassifier()
 
 # Allow Next.js frontend to talk to this backend
 app.add_middleware(
@@ -41,6 +45,32 @@ class SearchRequest(BaseModel):
 class ArticleRequest(BaseModel):
     query: str
     force_local: Optional[bool] = False
+
+
+def attach_article_sentiment(articles):
+    sentiment_inputs = []
+    sentiment_indexes = []
+
+    for index, article in enumerate(articles):
+        title = (article.get("title") or "").strip()
+        description = (article.get("description") or "").strip()
+        combined_text = " ".join(part for part in [title, description] if part).strip()
+
+        if not combined_text:
+            article["sentiment"] = None
+            continue
+
+        sentiment_inputs.append(combined_text)
+        sentiment_indexes.append(index)
+
+    if not sentiment_inputs:
+        return articles
+
+    results = sentiment_classifier.classify_batch(sentiment_inputs)
+    for index, result in zip(sentiment_indexes, results):
+        articles[index]["sentiment"] = result.to_dict()
+
+    return articles
 
 @app.post("/api/articles")
 def run_article_feed(req: ArticleRequest):
@@ -67,6 +97,7 @@ def run_article_feed(req: ArticleRequest):
             
         # Compute match percentages natively across all embeddings
         ranked_articles = compute_similarity_scores(req.query, articles)
+        ranked_articles = attach_article_sentiment(ranked_articles)
         
         return {"status": "success", "articles": ranked_articles, "is_offline_cache": is_offline_cache}
     except Exception as e:
