@@ -326,7 +326,7 @@ export default function Home() {
                     {a.match_score}% Match
                   </div>
                 </div>
-                <p className="text-neutral-400 text-sm mb-3 line-clamp-3">{a.description}</p>
+                <p className="text-neutral-400 text-sm mb-3 line-clamp-3">{(a.body || "").slice(0, 300)}...</p>
                 <div className="text-xs text-neutral-500 uppercase flex flex-wrap items-center gap-2">
                    <span className="font-bold text-neutral-300 bg-neutral-800 px-2 py-0.5 rounded-sm">{a.source}</span>
                    {a.publish_date && <span>• {new Date(a.publish_date).toLocaleDateString()}</span>}

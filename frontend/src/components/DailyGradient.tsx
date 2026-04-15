@@ -8,6 +8,14 @@ export default function DailyGradient({ localMode = false }: { localMode?: boole
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+  const [expandedTextIndices, setExpandedTextIndices] = useState<number[]>([]);
+
+  const toggleTextExpand = (e: React.MouseEvent, idx: number) => {
+     e.stopPropagation();
+     setExpandedTextIndices(prev => 
+       prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx]
+     );
+  };
 
   useEffect(() => {
     async function loadGradient() {
@@ -71,9 +79,22 @@ export default function DailyGradient({ localMode = false }: { localMode?: boole
                           {isExpanded ? <ChevronUp className="w-6 h-6" /> : <ChevronDown className="w-6 h-6" />}
                        </div>
                     </div>
-                    <p className="text-neutral-400 mt-3 line-clamp-2 md:line-clamp-none">{main.description}</p>
+                    <div className="relative mt-3">
+                       <p className={`text-neutral-400 ${expandedTextIndices.includes(idx) ? 'max-h-[60vh] overflow-y-auto pr-2 pb-8 custom-scrollbar whitespace-pre-wrap' : 'line-clamp-2 md:line-clamp-none'}`}>
+                          {expandedTextIndices.includes(idx) ? (main.body || "") : (main.body || "").slice(0, 450) + "..."}
+                       </p>
+                       <button
+                          onClick={(e) => toggleTextExpand(e, idx)}
+                          className={`absolute bottom-0 right-0 ${expandedTextIndices.includes(idx) ? 'relative mt-2 flex justify-start' : 'bg-gradient-to-l from-neutral-900 via-neutral-900 to-transparent pl-8'} text-blue-400 hover:text-blue-300 text-sm font-semibold transition-colors`}
+                       >
+                          {expandedTextIndices.includes(idx) ? "[-] Hide Full Text" : "[+] Show Full Text"}
+                       </button>
+                    </div>
                     <div className="text-xs text-neutral-500 mt-4 flex justify-between items-center">
-                       <span className="font-bold text-neutral-300 uppercase bg-neutral-800 px-2 py-1 rounded">{main.source}</span>
+                       <div className="flex gap-2">
+                          <span className="font-bold text-neutral-300 uppercase bg-neutral-800 px-2 py-1 rounded shadow-sm">{main.source}</span>
+                          <span className="font-bold text-indigo-300 uppercase bg-indigo-900/40 border border-indigo-800/80 px-2 py-1 rounded shadow-sm">{main.category || "General"}</span>
+                       </div>
                        <a href={main.url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-blue-400 hover:text-blue-300 bg-blue-900/20 px-3 py-1 rounded-full transition-colors" onClick={(e) => e.stopPropagation()}>
                           <LinkIcon className="w-3 h-3" /> Read Article
                        </a>
@@ -85,7 +106,7 @@ export default function DailyGradient({ localMode = false }: { localMode?: boole
                     <div className="overflow-hidden">
                        <div className="p-6 pt-0 border-t border-neutral-800/50 bg-neutral-950/40">
                           <h4 className="text-sm font-semibold text-neutral-400 my-4 tracking-wider uppercase flex items-center justify-between">
-                            <span>Alternative Perspectives</span>
+                            <span>Similar Stories:</span>
                             <span className="text-xs bg-neutral-800 px-2 py-0.5 rounded text-neutral-500">{subs.length} Selected</span>
                           </h4>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
