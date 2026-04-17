@@ -132,9 +132,9 @@ function ClusterContent() {
               onChange={(e) => setDimReduction(e.target.value)}
               className="bg-transparent text-sm focus:outline-none cursor-pointer text-blue-400 font-medium pr-1"
             >
-              <option className="bg-neutral-900 text-white" value="umap" title="Good for exploring both local clusters and overall structure.">UMAP (Balanced)</option>
-              <option className="bg-neutral-900 text-white" value="tsne" title="Prioritizes distinct, separated local clusters.">t-SNE (Cluster-focused)</option>
-              <option className="bg-neutral-900 text-white" value="pca" title="Provides a quick, linear overview of main variances.">PCA (Overview)</option>
+              <option className="bg-neutral-900 text-white" value="umap" title="Good for exploring both local clusters and overall structure.">Balanced (UMAP)</option>
+              <option className="bg-neutral-900 text-white" value="tsne" title="Prioritizes distinct, separated local clusters.">Cluster-focused (t-SNE)</option>
+              <option className="bg-neutral-900 text-white" value="pca" title="Provides a quick, linear overview of main variances.">Overview (PCA)</option>
             </select>
           </div>
           
@@ -147,11 +147,11 @@ function ClusterContent() {
               onChange={(e) => setAlgorithm(e.target.value)}
               className="bg-transparent text-sm focus:outline-none cursor-pointer pr-1"
             >
-              <option className="bg-neutral-900 text-white" value="hdbscan" title="Automatically finds groups of varying densities without choosing a number.">HDBSCAN (Automatic)</option>
-              <option className="bg-neutral-900 text-white" value="kmeans" title="Lets you control the exact number of narrative groups.">K-Means (Set group count)</option>
-              <option className="bg-neutral-900 text-white" value="gmm" title="Models groups probabilistically.">GMM</option>
-              <option className="bg-neutral-900 text-white" value="agglomerative" title="Builds groups hierarchically from bottom up.">Agglomerative</option>
-              <option className="bg-neutral-900 text-white" value="affinity" title="Creates groups by data points sending messages to each other.">Affinity</option>
+              <option className="bg-neutral-900 text-white" value="hdbscan" title="Automatically finds groups of varying densities without choosing a number.">Automatic (HDBSCAN)</option>
+              <option className="bg-neutral-900 text-white" value="kmeans" title="Lets you control the exact number of narrative groups.">Set group count (K-Means)</option>
+              <option className="bg-neutral-900 text-white" value="gmm" title="Models groups probabilistically.">Probabilistic (GMM)</option>
+              <option className="bg-neutral-900 text-white" value="agglomerative" title="Builds groups hierarchically from bottom up.">Hierarchical (Agglomerative)</option>
+              <option className="bg-neutral-900 text-white" value="affinity" title="Creates groups by data points sending messages to each other.">Message passing (Affinity)</option>
             </select>
           </div>
           
