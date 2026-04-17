@@ -4,6 +4,28 @@ import { useEffect, useState } from "react";
 import { useRouter, useSearchParams, useParams } from "next/navigation";
 import { ArrowLeft, ExternalLink, Loader2 } from "lucide-react";
 
+const formatTextIntoParagraphs = (text: string) => {
+  if (!text) return ["Content unavailable."];
+  
+  if (text.includes('\\n')) {
+    return text.split('\\n').filter(p => p.trim());
+  }
+  
+  const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+  const paragraphs = [];
+  let currentParagraph = "";
+  
+  for (let i = 0; i < sentences.length; i++) {
+    currentParagraph += sentences[i] + " ";
+    if ((i + 1) % 4 === 0 || i === sentences.length - 1) {
+      paragraphs.push(currentParagraph.trim());
+      currentParagraph = "";
+    }
+  }
+  
+  return paragraphs;
+};
+
 export default function ArticlePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -82,10 +104,9 @@ export default function ArticlePage() {
             </h1>
 
             <div className="prose prose-invert prose-lg max-w-none mb-10 text-neutral-300">
-              {(article.body || article.description || "Content unavailable.")
-                .split('\\n')
+              {formatTextIntoParagraphs(article.body || article.description || "Content unavailable.")
                 .map((paragraph: string, i: number) => (
-                  paragraph.trim() ? <p key={i} className="leading-relaxed mb-4">{paragraph}</p> : null
+                  paragraph.trim() ? <p key={i} className="leading-relaxed mb-6">{paragraph}</p> : null
               ))}
             </div>
 
