@@ -82,9 +82,11 @@ export default function ArticlePage() {
             </h1>
 
             <div className="prose prose-invert prose-lg max-w-none mb-10 text-neutral-300">
-              <p className="leading-relaxed">
-                {article.embed_text || article.description || "Content unavailable."}
-              </p>
+              {(article.body || article.description || "Content unavailable.")
+                .split('\\n')
+                .map((paragraph: string, i: number) => (
+                  paragraph.trim() ? <p key={i} className="leading-relaxed mb-4">{paragraph}</p> : null
+              ))}
             </div>
 
             {article.url && (

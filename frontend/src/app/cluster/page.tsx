@@ -128,11 +128,20 @@ function ClusterContent() {
         let distHtml = "";
         if (d.distance_from_center !== undefined && clusterId !== -1) {
           const dist = d.distance_from_center;
-          if (dist < 0.2) distHtml = `<br><br><span style="color:#d9f99d;">🟢 Core article (Dist: ${dist})</span>`;
-          else if (dist < 0.4) distHtml = `<br><br><span style="color:#fef08a;">🟡 Typical article (Dist: ${dist})</span>`;
-          else distHtml = `<br><br><span style="color:#fca5a5;">🔴 Peripheral article (Dist: ${dist})</span>`;
+          if (dist < 0.2) distHtml = `<br><span style="color:#d9f99d;">🟢 Core article (Dist: ${dist})</span>`;
+          else if (dist < 0.4) distHtml = `<br><span style="color:#fef08a;">🟡 Typical article (Dist: ${dist})</span>`;
+          else distHtml = `<br><span style="color:#fca5a5;">🔴 Peripheral article (Dist: ${dist})</span>`;
         }
-        return `<b>${d.source}</b><br>${d.title}${distHtml}`;
+        
+        let dateStr = "";
+        if (d.publish_date) {
+            const dateObj = new Date(d.publish_date);
+            dateStr = isNaN(dateObj.getTime()) ? d.publish_date.slice(0, 10) : dateObj.toLocaleDateString();
+        }
+        
+        let descHtml = d.description ? `<br><br><span style="color:#a3a3a3; font-size:11px;">${d.description.length > 150 ? d.description.substring(0, 150) + "..." : d.description}</span>` : "";
+        
+        return `<b>${d.source}</b> <span style="color:#737373; font-size:10px; margin-left:8px;">${dateStr}</span><br><span style="font-size:13px; font-weight:500;">${d.title}</span>${descHtml}<br>${distHtml}<br><br><i style="color:#60a5fa; font-size:11px;">✨ Click to read full article</i>`;
       }),
       hoverinfo: "text",
       hoverlabel: { bgcolor: "#171717", font: { color: "white" }, align: "left" },
