@@ -22,8 +22,9 @@ function ClusterContent() {
   const localParam = searchParams.get("local") === "true";
   
   const [data, setData] = useState<any[]>([]);
-  const [summaries, setSummaries] = useState<Record<string, string>>({});
+  const [summaries, setSummaries] = useState<Record<string, {title: string, summary: string} | string>>({});
   const [ndsScores, setNdsScores] = useState<Record<string, number>>({});
+  const [selectedCluster, setSelectedCluster] = useState<number | null>(null);
   const [isLocalSummary, setIsLocalSummary] = useState(false);
   const [isOfflineCache, setIsOfflineCache] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -115,8 +116,22 @@ function ClusterContent() {
     return a - b;
   });
 
+  const VIBRANT_COLORS = [
+    "#00f0ff", // Neon Cyan
+    "#ff003c", // Cyber Red
+    "#bc13fe", // Electric Purple
+    "#a1ff0a", // Acid Green
+    "#ff7f00", // Laser Orange
+    "#ffea00", // Cyber Yellow
+    "#ff00a0", // Shocking Pink
+    "#5d00ff"  // Neon Indigo
+  ];
+
   const plotData = uniqueClusters.map(clusterId => {
     const clusterPoints = data.filter(d => d.cluster === clusterId);
+    const isSelected = selectedCluster === null || selectedCluster === clusterId;
+    const baseColor = clusterId === -1 ? "#525252" : VIBRANT_COLORS[Math.abs(clusterId) % VIBRANT_COLORS.length];
+    
     return {
       x: clusterPoints.map(d => d.x),
       y: clusterPoints.map(d => d.y),
@@ -138,8 +153,9 @@ function ClusterContent() {
       hoverlabel: { bgcolor: "#171717", font: { color: "white" }, align: "left" },
       marker: {
         size: 12,
-        opacity: clusterId === -1 ? 0.25 : 0.85,
-        line: { width: 1, color: "#171717" }
+        opacity: clusterId === -1 ? (isSelected ? 0.25 : 0.05) : (isSelected ? 0.85 : 0.1),
+        line: { width: 1, color: "#171717" },
+        color: baseColor
       }
     };
   });
@@ -257,6 +273,11 @@ function ClusterContent() {
           <div className="absolute inset-0 w-full h-full z-0">
             <Plot
               data={plotData as any}
+              onLegendClick={(e: any) => {
+                const cId = uniqueClusters[e.curveNumber];
+                setSelectedCluster(prev => prev === cId ? null : cId);
+                return false; 
+              }}
               onClick={(e: any) => {
                 if (e.points && e.points.length > 0) {
                   const articleId = e.points[0].customdata;
@@ -306,22 +327,40 @@ function ClusterContent() {
              </h3>
              <div className="space-y-6">
                {uniqueClusters.filter(c => c !== -1).map(clusterId => {
-                 let text = summaries[clusterId.toString()] || "";
-                 if (text.includes('.')) {
-                   text = text.substring(0, text.lastIndexOf('.') + 1);
-                 } else if (text && text !== "Narrative summary unavailable.") {
-                   text = text + '.';
+                 if (selectedCluster !== null && selectedCluster !== clusterId) return null;
+
+                 const summaryData = summaries[clusterId.toString()];
+                 const isObj = typeof summaryData === 'object' && summaryData !== null;
+                 
+                 let title = isObj ? (summaryData as any).title : `Narrative ${clusterId + 1}`;
+                 let text = isObj ? (summaryData as any).summary : (summaryData || "");
+
+                 if (typeof text === 'string') {
+                   if (text.includes('.')) {
+                     text = text.substring(0, text.lastIndexOf('.') + 1);
+                   } else if (text && text !== "Narrative summary unavailable.") {
+                     text = text + '.';
+                   }
                  }
                  
                  const clusterPoints = data.filter(d => d.cluster === clusterId);
                  const sources = Array.from(new Set(clusterPoints.map(d => d.source))).filter(Boolean);
+                 const baseColor = VIBRANT_COLORS[Math.abs(clusterId) % VIBRANT_COLORS.length];
                  
                  return (
                    <div key={clusterId} className="flex flex-col gap-2">
                       <div className="flex items-center gap-3">
-                        <span className="font-bold text-blue-400 bg-blue-900/30 px-3 py-1 rounded border border-blue-900/50">
-                          Narrative {clusterId + 1}
-                        </span>
+                        <button 
+                          onClick={() => setSelectedCluster(prev => prev === clusterId ? null : clusterId)}
+                          className="font-bold px-3 py-1 rounded inline-block transition-transform hover:scale-[1.02] cursor-pointer text-left focus:outline-none"
+                          style={{ 
+                            backgroundColor: baseColor + '33', 
+                            color: baseColor, 
+                            border: `1px solid ${baseColor}80` 
+                          }}
+                        >
+                          {isObj ? `Narrative ${clusterId + 1}: ${title}` : title}
+                        </button>
                         {ndsScores[clusterId.toString()] !== undefined && (
                           <span className={`text-xs px-2 py-0.5 rounded-full font-bold border ${
                             ndsScores[clusterId.toString()] < 0.3 
@@ -344,15 +383,18 @@ function ClusterContent() {
                  );
                })}
                
-               {uniqueClusters.includes(-1) && (
+               {uniqueClusters.includes(-1) && (selectedCluster === null || selectedCluster === -1) && (
                  <div className="flex flex-col gap-2 opacity-50 mt-6 pt-6 border-t border-neutral-800/50">
                     <div className="flex items-center gap-3">
-                      <span className="font-bold text-neutral-500 bg-neutral-800/50 px-3 py-1 rounded border border-neutral-700/50">
+                      <button 
+                        onClick={() => setSelectedCluster(prev => prev === -1 ? null : -1)}
+                        className="font-bold text-neutral-500 bg-neutral-800/50 px-3 py-1 rounded border border-neutral-700/50 cursor-pointer hover:bg-neutral-800 transition-colors"
+                      >
                         Narrative Noise
-                      </span>
+                      </button>
                     </div>
                     <p className="text-neutral-400 italic pl-1">
-                      {summaries["-1"] || "Unclustered outliers and noise."}
+                      {typeof summaries["-1"] === 'object' && summaries["-1"] !== null ? (summaries["-1"] as any).summary : (summaries["-1"] as string || "Unclustered outliers and noise.")}
                     </p>
                  </div>
                )}

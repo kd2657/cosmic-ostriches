@@ -336,7 +336,16 @@ def process_batch_cluster(
     
     if client and target_clusters:
         try:
-            prompt = f"You are an analytical AI bot. Read the following sets of news reporting grouped by cluster. Synthesize and summarize the main narrative connecting each cluster into a clear, concise paragraph without strict limits. Highlight any notable differences between each cluster. Avoid using the word 'cluster' in your response. Return your response STRICTLY as a valid JSON object where each KEY is the plain cluster number as a string (e.g. \"0\", \"1\", \"2\") and each VALUE is the summary paragraph. Ensure all text values are properly escaped and contain absolutely NO literal newlines. \n\n{cluster_strings}"
+            prompt = (
+                f"You are an analytical AI bot. Read the following sets of news reporting grouped by narrative. "
+                f"Provide a short title and a strict 2-sentence summary for each narrative. "
+                f"The first sentence should summarize the core narrative. "
+                f"The second sentence MUST explicitly focus on what makes this particular narrative different from the others. "
+                f"Avoid using the word 'cluster' in your response. "
+                f"Return your response STRICTLY as a valid JSON object where each KEY is the plain narrative number as a string (e.g. \"0\", \"1\", \"2\") "
+                f"and each VALUE is a nested object containing two string fields: \"title\" and \"summary\". "
+                f"Ensure all text values are properly escaped and contain absolutely NO literal newlines. \n\n{cluster_strings}"
+            )
             
             response = client.models.generate_content(
                 model='gemini-2.5-flash',
