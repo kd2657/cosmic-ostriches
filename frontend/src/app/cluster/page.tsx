@@ -90,7 +90,7 @@ function ClusterContent() {
   };
 
   useEffect(() => {
-    fetchData(algorithm, kValue, dimReduction, { dedupe: true });
+    fetchData(algorithm, kValue, dimReduction);
     return () => abortControllerRef.current?.abort();
   }, [query]);
 

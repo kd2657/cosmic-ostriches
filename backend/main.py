@@ -17,11 +17,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
-from api import fetch_news
-from ml import vectorize_and_store, process_batch_cluster, query_local_database, compute_similarity_scores
-from sentiment import SentimentClassifier
 from api import fetch_news, fetch_daily_gradient
-from ml import vectorize_and_store, process_batch_cluster, query_local_database, compute_similarity_scores, process_daily_gradient
+from ml import vectorize_and_store, process_batch_cluster, query_local_database, compute_similarity_scores, process_daily_gradient, get_article_by_id
+from sentiment import SentimentClassifier
 
 app = FastAPI(title="The Local Minima API")
 sentiment_classifier = SentimentClassifier()
@@ -172,7 +170,6 @@ def get_daily_gradient(force_local: bool = False):
 def health_check():
     return {"status": "ok"}
 
-from backend.ml import get_article_by_id
 
 @app.get("/api/article/{article_id:path}")
 def fetch_single_article(article_id: str):

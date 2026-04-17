@@ -596,3 +596,19 @@ def process_daily_gradient(articles: List[Dict[str, Any]], n_main: int = 8, n_re
         
     return briefing
 
+def get_article_by_id(article_id: str) -> Optional[Dict[str, Any]]:
+    """Retrieve a single article by its explicit ID from ChromaDB."""
+    results = collection.get(ids=[article_id], include=["metadatas"])
+    if results and results["ids"] and len(results["ids"]) > 0:
+        meta = results["metadatas"][0]
+        return {
+            "id": results["ids"][0],
+            "title": meta.get("title", "Unknown"),
+            "description": meta.get("description", ""),
+            "url": meta.get("url", ""),
+            "source": meta.get("source", ""),
+            "body": meta.get("body", ""),
+            "publish_date": meta.get("publish_date", ""),
+            "category": meta.get("category", "General")
+        }
+    return None
