@@ -15,6 +15,7 @@ type ArticleSentiment = {
 type Article = {
   title: string;
   description: string;
+  body?: string;
   source?: string;
   publish_date?: string;
   match_score: number;
