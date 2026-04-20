@@ -3,7 +3,23 @@
 import { useState, useEffect, Suspense, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
-import { ArrowLeft, Loader2, Settings2, Sparkles, Info } from "lucide-react";
+import { ArrowLeft, Loader2, Settings2, Sparkles, Info, X, ExternalLink } from "lucide-react";
+
+const formatTextIntoParagraphs = (text: string) => {
+  if (!text) return ["Content unavailable."];
+  if (text.includes('\\n')) return text.split('\\n').filter(p => p.trim());
+  const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+  const paragraphs = [];
+  let currentParagraph = "";
+  for (let i = 0; i < sentences.length; i++) {
+    currentParagraph += sentences[i] + " ";
+    if ((i + 1) % 4 === 0 || i === sentences.length - 1) {
+      paragraphs.push(currentParagraph.trim());
+      currentParagraph = "";
+    }
+  }
+  return paragraphs;
+};
 
 // Plotly needs to be loaded dynamically with ssr disabled
 const Plot = dynamic(() => import("react-plotly.js"), { 
@@ -28,6 +44,7 @@ function ClusterContent() {
   const [isOfflineCache, setIsOfflineCache] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [selectedArticle, setSelectedArticle] = useState<any>(null);
   
   const [algorithm, setAlgorithm] = useState("hdbscan");
   const [kValue, setKValue] = useState<number | "">("");
@@ -128,11 +145,20 @@ function ClusterContent() {
         let distHtml = "";
         if (d.distance_from_center !== undefined && clusterId !== -1) {
           const dist = d.distance_from_center;
-          if (dist < 0.2) distHtml = `<br><br><span style="color:#d9f99d;">🟢 Core article (Dist: ${dist})</span>`;
-          else if (dist < 0.4) distHtml = `<br><br><span style="color:#fef08a;">🟡 Typical article (Dist: ${dist})</span>`;
-          else distHtml = `<br><br><span style="color:#fca5a5;">🔴 Peripheral article (Dist: ${dist})</span>`;
+          if (dist < 0.2) distHtml = `<br><span style="color:#d9f99d;">🟢 Core article (Dist: ${dist})</span>`;
+          else if (dist < 0.4) distHtml = `<br><span style="color:#fef08a;">🟡 Typical article (Dist: ${dist})</span>`;
+          else distHtml = `<br><span style="color:#fca5a5;">🔴 Peripheral article (Dist: ${dist})</span>`;
         }
-        return `<b>${d.source}</b><br>${d.title}${distHtml}`;
+        
+        let dateStr = "";
+        if (d.publish_date) {
+            const dateObj = new Date(d.publish_date);
+            dateStr = isNaN(dateObj.getTime()) ? d.publish_date.slice(0, 10) : dateObj.toLocaleDateString();
+        }
+        
+        let descHtml = d.description ? `<br><br><span style="color:#a3a3a3; font-size:11px;">${d.description.length > 150 ? d.description.substring(0, 150) + "..." : d.description}</span>` : "";
+        
+        return `<b>${d.source}</b> <span style="color:#737373; font-size:10px; margin-left:8px;">${dateStr}</span><br><span style="font-size:13px; font-weight:500;">${d.title}</span>${descHtml}<br>${distHtml}<br><br><i style="color:#60a5fa; font-size:11px;">✨ Click to read full article</i>`;
       }),
       hoverinfo: "text",
       hoverlabel: { bgcolor: "#171717", font: { color: "white" }, align: "left" },
@@ -260,9 +286,8 @@ function ClusterContent() {
               onClick={(e: any) => {
                 if (e.points && e.points.length > 0) {
                   const articleId = e.points[0].customdata;
-                  const urlParams = new URLSearchParams({ q: query, algo: algorithm, dim: dimReduction });
-                  if (kValue !== "") urlParams.append("k", kValue.toString());
-                  router.push(`/article/${encodeURIComponent(articleId)}?${urlParams.toString()}`);
+                  const article = data.find(d => d.id === articleId);
+                  if (article) setSelectedArticle(article);
                 }
               }}
               layout={{
@@ -292,8 +317,11 @@ function ClusterContent() {
 
         {/* AI Summarization Panel */}
         {!loading && Object.keys(summaries).length > 0 && (
-          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 overflow-y-auto max-h-[45vh] flex-shrink-0 animate-in fade-in slide-in-from-bottom-2 duration-500">
-             <h3 className="text-lg font-bold text-white mb-4 border-b border-neutral-800 pb-2 flex items-center justify-between">
+          <div className="relative bg-neutral-900/60 backdrop-blur-xl border border-neutral-800/50 rounded-3xl p-6 overflow-y-auto max-h-[45vh] flex-shrink-0 shadow-2xl animate-in fade-in slide-in-from-bottom-2 duration-500 styled-scrollbar">
+             {/* Subtle top fade for scroll indication */}
+             <div className="sticky top-[-24px] left-0 right-0 h-6 bg-gradient-to-b from-neutral-900/80 to-transparent pointer-events-none z-10 -mx-6 mb-4" />
+             
+             <h3 className="text-lg font-bold text-white mb-6 border-b border-neutral-800/50 pb-3 flex items-center justify-between relative z-10">
                <div className="flex items-center gap-2">
                  <Sparkles className="w-5 h-5 text-blue-400" />
                  AI Narrative Summaries
@@ -304,7 +332,7 @@ function ClusterContent() {
                  </span>
                )}
              </h3>
-             <div className="space-y-6">
+             <div className="flex flex-col gap-4">
                {uniqueClusters.filter(c => c !== -1).map(clusterId => {
                  let text = summaries[clusterId.toString()] || "";
                  if (text.includes('.')) {
@@ -315,48 +343,109 @@ function ClusterContent() {
                  
                  const clusterPoints = data.filter(d => d.cluster === clusterId);
                  const sources = Array.from(new Set(clusterPoints.map(d => d.source))).filter(Boolean);
-                 
-                 return (
-                   <div key={clusterId} className="flex flex-col gap-2">
-                      <div className="flex items-center gap-3">
-                        <span className="font-bold text-blue-400 bg-blue-900/30 px-3 py-1 rounded border border-blue-900/50">
+                            return (
+                   <div key={clusterId} className="group relative flex flex-col gap-3 bg-neutral-950/40 hover:bg-neutral-900/60 border border-neutral-800/50 hover:border-blue-900/30 rounded-2xl p-5 transition-all duration-300 overflow-hidden shadow-sm hover:shadow-md">
+                      {/* Subtle hover gradient background */}
+                      <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+                      
+                      <div className="flex flex-wrap items-center gap-2 relative z-10">
+                        <span className="font-bold text-xs text-blue-300 bg-blue-900/20 px-2.5 py-1 rounded-md border border-blue-800/30 shadow-[0_0_10px_rgba(59,130,246,0.1)]">
                           Narrative {clusterId + 1}
                         </span>
                         {ndsScores[clusterId.toString()] !== undefined && (
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-bold border ${
+                          <span className={`text-[10px] px-2.5 py-1 rounded-md font-bold border ${
                             ndsScores[clusterId.toString()] < 0.3 
-                              ? 'bg-green-950/50 text-green-400 border-green-900/50' 
+                              ? 'bg-green-950/30 text-green-400 border-green-900/30' 
                               : ndsScores[clusterId.toString()] < 0.6
-                                ? 'bg-yellow-950/50 text-yellow-500 border-yellow-900/50'
-                                : 'bg-red-950/50 text-red-400 border-red-900/50'
+                                ? 'bg-yellow-950/30 text-yellow-500 border-yellow-900/30'
+                                : 'bg-red-950/30 text-red-400 border-red-900/30'
                           }`} title={`Narrative Diversity Score: ${ndsScores[clusterId.toString()]} (higher means broader discourse)`}>
                             NDS: {ndsScores[clusterId.toString()]}
                           </span>
                         )}
                       </div>
-                      <p className="text-neutral-300 leading-relaxed font-medium pl-1">
+                      
+                      <p className="text-neutral-300 leading-relaxed text-[15px] font-medium flex-grow relative z-10 group-hover:text-neutral-100 transition-colors duration-300">
                         {text}
                       </p>
-                      <p className="text-xs text-neutral-500 font-mono uppercase tracking-wider pl-1 mt-1">
-                        Sources: <span className="text-neutral-400">{sources.join(", ") || "Unknown"}</span>
-                      </p>
+                      
+                      <div className="mt-2 pt-3 border-t border-neutral-800/40 relative z-10">
+                        <p className="text-[11px] text-neutral-400 font-mono uppercase tracking-wider line-clamp-1 group-hover:text-neutral-300 transition-colors duration-300">
+                          <span className="text-neutral-600 mr-2">Sources:</span>
+                          {sources.join(", ") || "Unknown"}
+                        </p>
+                      </div>
                    </div>
                  );
                })}
                
                {uniqueClusters.includes(-1) && (
-                 <div className="flex flex-col gap-2 opacity-50 mt-6 pt-6 border-t border-neutral-800/50">
+                 <div className="flex flex-col gap-3 bg-neutral-950/20 border border-dashed border-neutral-800/40 rounded-2xl p-5 opacity-60 hover:opacity-100 transition-opacity duration-300">
                     <div className="flex items-center gap-3">
-                      <span className="font-bold text-neutral-500 bg-neutral-800/50 px-3 py-1 rounded border border-neutral-700/50">
+                      <span className="font-bold text-xs text-neutral-500 bg-neutral-900/50 px-2.5 py-1 rounded-md border border-neutral-800/50">
                         Narrative Noise
                       </span>
                     </div>
-                    <p className="text-neutral-400 italic pl-1">
+                    <p className="text-neutral-400 italic text-[14px]">
                       {summaries["-1"] || "Unclustered outliers and noise."}
                     </p>
                  </div>
                )}
              </div>
+          </div>
+        )}
+        
+        {/* Article Modal */}
+        {selectedArticle && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 md:p-12 animate-in fade-in duration-200">
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm cursor-pointer" onClick={() => setSelectedArticle(null)} />
+            <div className="relative w-full max-w-4xl max-h-[90vh] bg-neutral-900 border border-neutral-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-300">
+              {/* Header */}
+              <div className="flex items-center justify-between p-6 border-b border-neutral-800/60 bg-neutral-900/50 shrink-0">
+                <div className="flex items-center gap-3">
+                  <span className="font-bold text-xs tracking-widest uppercase text-blue-400 bg-blue-900/30 px-3 py-1 rounded-md border border-blue-900/50">
+                    {selectedArticle.source || "Unknown Source"}
+                  </span>
+                  <span className="text-sm font-mono text-neutral-500">
+                    {selectedArticle.publish_date ? new Date(selectedArticle.publish_date).toLocaleDateString() : ""}
+                  </span>
+                </div>
+                <button 
+                  onClick={() => setSelectedArticle(null)}
+                  className="p-2 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded-full transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              {/* Body */}
+              <div className="flex-grow overflow-y-auto p-6 md:p-10 styled-scrollbar">
+                <h2 className="text-2xl md:text-3xl font-bold leading-tight mb-8 text-neutral-100">
+                  {selectedArticle.title}
+                </h2>
+                <div className="prose prose-invert prose-lg max-w-none text-neutral-300">
+                  {formatTextIntoParagraphs(selectedArticle.body || selectedArticle.description || "Content unavailable.")
+                    .map((paragraph: string, i: number) => (
+                      paragraph.trim() ? <p key={i} className="leading-relaxed mb-6">{paragraph}</p> : null
+                  ))}
+                </div>
+              </div>
+              
+              {/* Footer */}
+              {selectedArticle.url && (
+                <div className="p-6 border-t border-neutral-800/60 bg-neutral-900/50 shrink-0 flex justify-end">
+                  <a 
+                    href={selectedArticle.url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-6 py-2.5 rounded-xl font-medium transition-colors"
+                  >
+                    Read Original Article
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </main>
