@@ -407,7 +407,7 @@ function ClusterContent() {
                         )}
                       </div>
                       
-                      <p className="text-neutral-300 group-hover:text-neutral-200 transition-colors duration-300 leading-relaxed text-[15px] font-medium flex-grow relative z-10 group-hover:text-neutral-100 transition-colors duration-300 line-clamp-3">
+                      <p className="text-neutral-300 group-hover:text-neutral-200 transition-colors duration-300 group-hover:text-neutral-200 transition-colors duration-300 leading-relaxed text-[15px] font-medium flex-grow relative z-10 group-hover:text-neutral-100 transition-colors duration-300 line-clamp-3 line-clamp-3">
                         {text}
                       </p>
                       <div className="flex items-center justify-between mt-1 border-t border-neutral-800/50 pt-3">
@@ -435,63 +435,6 @@ function ClusterContent() {
                     <p className="text-neutral-400 italic text-[14px]">
                       {summaries["-1"] || "Unclustered outliers and noise."}
                     </p>
-                 </div>
-               )}
-             </div>
-          </div>
-        )}
-        
-        {/* Article Modal */}
-        {selectedArticle && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 md:p-12 animate-in fade-in duration-200">
-            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm cursor-pointer" onClick={() => setSelectedArticle(null)} />
-            <div className="relative w-full max-w-4xl max-h-[90vh] bg-neutral-900 border border-neutral-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-300">
-              {/* Header */}
-              <div className="flex items-center justify-between p-6 border-b border-neutral-800/60 bg-neutral-900/50 shrink-0">
-                <div className="flex items-center gap-3">
-                  <span className="font-bold text-xs tracking-widest uppercase text-blue-400 bg-blue-900/30 px-3 py-1 rounded-md border border-blue-900/50">
-                    {selectedArticle.source || "Unknown Source"}
-                  </span>
-                  <span className="text-sm font-mono text-neutral-500">
-                    {selectedArticle.publish_date ? new Date(selectedArticle.publish_date).toLocaleDateString() : ""}
-                  </span>
-                </div>
-                <button 
-                  onClick={() => setSelectedArticle(null)}
-                  className="p-2 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded-full transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              
-              {/* Body */}
-              <div className="flex-grow overflow-y-auto p-6 md:p-10 styled-scrollbar">
-                <h2 className="text-2xl md:text-3xl font-bold leading-tight mb-8 text-neutral-100">
-                  {selectedArticle.title}
-                </h2>
-                <div className="prose prose-invert prose-lg max-w-none text-neutral-300">
-                  {formatTextIntoParagraphs(selectedArticle.body || selectedArticle.description || "Content unavailable.")
-                    .map((paragraph: string, i: number) => (
-                      paragraph.trim() ? <p key={i} className="leading-relaxed mb-6">{paragraph}</p> : null
-                  ))}
-                </div>
-              </div>
-              
-              {/* Footer */}
-              {selectedArticle.url && (
-                <div className="p-6 border-t border-neutral-800/60 bg-neutral-900/50 shrink-0 flex justify-end">
-                  <a 
-                    href={selectedArticle.url} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-6 py-2.5 rounded-xl font-medium transition-colors"
-                  >
-                    Read Original Article
-                    <ExternalLink className="w-4 h-4" />
-                  </a>
-                </div>
-              )}
-            </div>
                  </div>
                )}
              </div>
