@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
-import { ArrowLeft, Loader2, Settings2, Sparkles, Info, X, ExternalLink } from "lucide-react";
+import { ArrowLeft, Loader2, Settings2, Sparkles, Info, X, ExternalLink, ChevronRight } from "lucide-react";
 
 const formatTextIntoParagraphs = (text: string) => {
   if (!text) return ["Content unavailable."];
@@ -68,6 +68,7 @@ function ClusterContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedArticle, setSelectedArticle] = useState<any>(null);
+  const [selectedNarrative, setSelectedNarrative] = useState<{id: string, text: string, nds: number, sources: string[]} | null>(null);
   
   const [algorithm, setAlgorithm] = useState("hdbscan");
   const [kValue, setKValue] = useState<number | "">("");
@@ -374,7 +375,7 @@ function ClusterContent() {
                  </span>
                )}
              </h3>
-             <div className="flex flex-col gap-4">
+             <div className="flex flex-col gap-4 w-full pb-4">
                {uniqueClusters.filter(c => c !== -1).map(clusterId => {
                  let text = summaries[clusterId.toString()] || "";
                  if (text.includes('.')) {
@@ -385,13 +386,12 @@ function ClusterContent() {
                  
                  const clusterPoints = data.filter(d => d.cluster === clusterId);
                  const sources = Array.from(new Set(clusterPoints.map(d => d.source))).filter(Boolean);
-                            return (
-                   <div key={clusterId} className="group relative flex flex-col gap-3 bg-neutral-950/40 hover:bg-neutral-900/60 border border-neutral-800/50 hover:border-blue-900/30 rounded-2xl p-5 transition-all duration-300 overflow-hidden shadow-sm hover:shadow-md">
-                      {/* Subtle hover gradient background */}
-                      <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
-                      
-                      <div className="flex flex-wrap items-center gap-2 relative z-10">
-                        <span className="font-bold text-xs text-blue-300 bg-blue-900/20 px-2.5 py-1 rounded-md border border-blue-800/30 shadow-[0_0_10px_rgba(59,130,246,0.1)]">
+                 
+                   return (
+                     <div key={clusterId} className="relative overflow-hidden group flex flex-col gap-3 bg-neutral-950/40 hover:bg-neutral-900/60 border border-neutral-800/60 hover:border-neutral-700/80 rounded-xl p-6 transition-all duration-300 shadow-sm">
+                       <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-blue-500/50 to-purple-500/50 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                      <div className="flex items-center gap-3">
+                        <span className="font-bold text-blue-400 bg-blue-900/30 px-3 py-1 rounded border border-blue-900/50">
                           Narrative {clusterId + 1}
                         </span>
                         {ndsScores[clusterId.toString()] !== undefined && (
@@ -407,22 +407,26 @@ function ClusterContent() {
                         )}
                       </div>
                       
-                      <p className="text-neutral-300 leading-relaxed text-[15px] font-medium flex-grow relative z-10 group-hover:text-neutral-100 transition-colors duration-300">
+                      <p className="text-neutral-300 group-hover:text-neutral-200 transition-colors duration-300 leading-relaxed text-[15px] font-medium flex-grow relative z-10 group-hover:text-neutral-100 transition-colors duration-300 line-clamp-3">
                         {text}
                       </p>
-                      
-                      <div className="mt-2 pt-3 border-t border-neutral-800/40 relative z-10">
-                        <p className="text-[11px] text-neutral-400 font-mono uppercase tracking-wider line-clamp-1 group-hover:text-neutral-300 transition-colors duration-300">
-                          <span className="text-neutral-600 mr-2">Sources:</span>
-                          {sources.join(", ") || "Unknown"}
+                      <div className="flex items-center justify-between mt-1 border-t border-neutral-800/50 pt-3">
+                        <p className="text-xs text-neutral-500 font-mono uppercase tracking-wider pl-1 truncate max-w-[70%]">
+                          Sources: <span className="text-neutral-400">{sources.join(", ") || "Unknown"}</span>
                         </p>
+                        <button 
+                          onClick={() => setSelectedNarrative({ id: clusterId.toString(), text, nds: ndsScores[clusterId.toString()], sources })}
+                          className="text-xs text-blue-400 hover:text-blue-300 font-semibold flex items-center gap-1 bg-blue-900/10 hover:bg-blue-900/30 px-3 py-1.5 rounded-lg transition-colors shrink-0"
+                        >
+                          View Full Text <ChevronRight className="w-3 h-3" />
+                        </button>
                       </div>
                    </div>
                  );
                })}
                
                {uniqueClusters.includes(-1) && (
-                 <div className="flex flex-col gap-3 bg-neutral-950/20 border border-dashed border-neutral-800/40 rounded-2xl p-5 opacity-60 hover:opacity-100 transition-opacity duration-300">
+                 <div className="flex flex-col gap-3 bg-neutral-950/20 border border-dashed border-neutral-800/40 rounded-xl p-6 opacity-60 hover:opacity-100 transition-opacity">
                     <div className="flex items-center gap-3">
                       <span className="font-bold text-xs text-neutral-500 bg-neutral-900/50 px-2.5 py-1 rounded-md border border-neutral-800/50">
                         Narrative Noise
@@ -487,6 +491,46 @@ function ClusterContent() {
                   </a>
                 </div>
               )}
+            </div>
+                 </div>
+               )}
+             </div>
+          </div>
+        )}
+
+        {/* Narrative Full Text Modal */}
+        {selectedNarrative && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 md:p-12 animate-in fade-in duration-200">
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm cursor-pointer" onClick={() => setSelectedNarrative(null)} />
+            <div className="relative w-full max-w-2xl bg-neutral-900 border border-neutral-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-300">
+              <div className="flex items-center justify-between p-5 border-b border-neutral-800/60 bg-neutral-900/50">
+                <div className="flex items-center gap-3">
+                  <span className="font-bold text-sm text-blue-400 bg-blue-900/30 px-3 py-1 rounded-md border border-blue-900/50">
+                    Narrative {parseInt(selectedNarrative.id) + 1}
+                  </span>
+                  {selectedNarrative.nds !== undefined && (
+                    <span className="text-xs font-bold text-neutral-400 bg-neutral-800/50 px-2 py-1 rounded-md">
+                      NDS: {selectedNarrative.nds}
+                    </span>
+                  )}
+                </div>
+                <button 
+                  onClick={() => setSelectedNarrative(null)}
+                  className="p-2 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded-full transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-6 md:p-8 overflow-y-auto max-h-[60vh] styled-scrollbar">
+                <p className="text-neutral-200 text-lg leading-relaxed font-medium whitespace-pre-wrap">
+                  {selectedNarrative.text}
+                </p>
+              </div>
+              <div className="p-5 border-t border-neutral-800/60 bg-neutral-900/50">
+                <p className="text-xs text-neutral-500 font-mono uppercase tracking-wider">
+                  Sources: <span className="text-neutral-400">{selectedNarrative.sources.join(", ") || "Unknown"}</span>
+                </p>
+              </div>
             </div>
           </div>
         )}
