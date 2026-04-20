@@ -31,6 +31,29 @@ const Plot = dynamic(() => import("react-plotly.js"), {
   ) 
 });
 
+function computeConvexHull(points: {x: number, y: number}[]) {
+  if (points.length <= 2) return points;
+  const sorted = points.slice().sort((a, b) => a.x === b.x ? a.y - b.y : a.x - b.x);
+  const cross = (o: any, a: any, b: any) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lower: any[] = [];
+  for (let i = 0; i < sorted.length; i++) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], sorted[i]) <= 0) {
+       lower.pop();
+    }
+    lower.push(sorted[i]);
+  }
+  const upper: any[] = [];
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], sorted[i]) <= 0) {
+       upper.pop();
+    }
+    upper.push(sorted[i]);
+  }
+  upper.pop();
+  lower.pop();
+  return lower.concat(upper);
+}
+
 function ClusterContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -132,14 +155,33 @@ function ClusterContent() {
     return a - b;
   });
 
-  const plotData = uniqueClusters.map(clusterId => {
+  const plotData: any[] = [];
+  uniqueClusters.forEach(clusterId => {
     const clusterPoints = data.filter(d => d.cluster === clusterId);
-    return {
+    
+    if (clusterId !== -1 && clusterPoints.length > 2) {
+      const hull = computeConvexHull(clusterPoints.map(p => ({x: p.x, y: p.y})));
+      hull.push(hull[0]); // close loop
+      plotData.push({
+        x: hull.map((p: any) => p.x),
+        y: hull.map((p: any) => p.y),
+        mode: "lines",
+        fill: "toself",
+        fillcolor: "rgba(163, 163, 163, 0.05)",
+        line: { color: "rgba(163, 163, 163, 0.2)", width: 1, shape: "spline" },
+        hoverinfo: "skip",
+        showlegend: false,
+        legendgroup: `cluster_${clusterId}`
+      });
+    }
+
+    plotData.push({
       x: clusterPoints.map(d => d.x),
       y: clusterPoints.map(d => d.y),
       customdata: clusterPoints.map(d => d.id),
       type: "scatter",
       mode: "markers",
+      legendgroup: `cluster_${clusterId}`,
       name: clusterId === -1 ? "Noise (Unclustered)" : `Narrative ${clusterId + 1}`,
       text: clusterPoints.map(d => {
         let distHtml = "";
@@ -167,7 +209,7 @@ function ClusterContent() {
         opacity: clusterId === -1 ? 0.25 : 0.85,
         line: { width: 1, color: "#171717" }
       }
-    };
+    });
   });
 
   return (
