@@ -309,9 +309,11 @@ def process_batch_cluster(
         results.append({
             "id": article_id,
             "title": meta.get("title", "Unknown"),
+            "description": meta.get("description", ""),
             "url": meta.get("url", ""),
             "source": meta.get("source", ""),
             "body": meta.get("body", ""),
+            "publish_date": meta.get("publish_date", ""),
             "cluster": cluster_id,
             "x": float(reduced_embeddings[idx][0]),
             "y": float(reduced_embeddings[idx][1]),

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Loader2, BarChart2, Compass, Layers, Database, WifiOff } from "lucide-react";
+import { Search, Loader2, BarChart2, Compass, Layers, Database, WifiOff, Link as LinkIcon } from "lucide-react";
 import DailyGradient from "@/components/DailyGradient";
 
 type ArticleSentiment = {
@@ -13,10 +13,13 @@ type ArticleSentiment = {
 };
 
 type Article = {
+  id: string;
   title: string;
   description: string;
+  body?: string;
   source?: string;
   publish_date?: string;
+  url?: string;
   match_score: number;
   sentiment?: ArticleSentiment | null;
 };
@@ -343,9 +346,21 @@ export default function Home() {
                   </div>
                 </div>
                 <p className="text-neutral-400 text-sm mb-3 line-clamp-3">{(a.body || "").slice(0, 300)}...</p>
-                <div className="text-xs text-neutral-500 uppercase flex flex-wrap items-center gap-2">
-                   <span className="font-bold text-neutral-300 bg-neutral-800 px-2 py-0.5 rounded-sm">{a.source}</span>
-                   {a.publish_date && <span>• {new Date(a.publish_date).toLocaleDateString()}</span>}
+                <div className="flex justify-between items-center mt-auto">
+                   <div className="text-xs text-neutral-500 uppercase flex flex-wrap items-center gap-2">
+                      <span className="font-bold text-neutral-300 bg-neutral-800 px-2 py-0.5 rounded-sm">{a.source}</span>
+                      {a.publish_date && <span>• {new Date(a.publish_date).toLocaleDateString()}</span>}
+                   </div>
+                   {a.url && (
+                      <a 
+                        href={a.url} 
+                        target="_blank" 
+                        rel="noreferrer" 
+                        className="flex items-center gap-1 text-blue-400 hover:text-blue-300 bg-blue-900/10 px-3 py-1 rounded-full transition-colors text-xs font-semibold"
+                      >
+                         <LinkIcon className="w-3 h-3" /> Read Article
+                      </a>
+                   )}
                 </div>
                 {a.sentiment && (
                   <div className="mt-4 pt-3 border-t border-neutral-800 flex items-center justify-between gap-3">
