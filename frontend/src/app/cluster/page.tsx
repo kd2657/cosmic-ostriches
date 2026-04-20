@@ -3,7 +3,23 @@
 import { useState, useEffect, Suspense, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
-import { ArrowLeft, Loader2, Settings2, Sparkles, Info } from "lucide-react";
+import { ArrowLeft, Loader2, Settings2, Sparkles, Info, X, ExternalLink, ChevronRight } from "lucide-react";
+
+const formatTextIntoParagraphs = (text: string) => {
+  if (!text) return ["Content unavailable."];
+  if (text.includes('\\n')) return text.split('\\n').filter(p => p.trim());
+  const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+  const paragraphs = [];
+  let currentParagraph = "";
+  for (let i = 0; i < sentences.length; i++) {
+    currentParagraph += sentences[i] + " ";
+    if ((i + 1) % 4 === 0 || i === sentences.length - 1) {
+      paragraphs.push(currentParagraph.trim());
+      currentParagraph = "";
+    }
+  }
+  return paragraphs;
+};
 
 // Plotly needs to be loaded dynamically with ssr disabled
 const Plot = dynamic(() => import("react-plotly.js"), { 
@@ -14,6 +30,29 @@ const Plot = dynamic(() => import("react-plotly.js"), {
     </div>
   ) 
 });
+
+function computeConvexHull(points: {x: number, y: number}[]) {
+  if (points.length <= 2) return points;
+  const sorted = points.slice().sort((a, b) => a.x === b.x ? a.y - b.y : a.x - b.x);
+  const cross = (o: any, a: any, b: any) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lower: any[] = [];
+  for (let i = 0; i < sorted.length; i++) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], sorted[i]) <= 0) {
+       lower.pop();
+    }
+    lower.push(sorted[i]);
+  }
+  const upper: any[] = [];
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], sorted[i]) <= 0) {
+       upper.pop();
+    }
+    upper.push(sorted[i]);
+  }
+  upper.pop();
+  lower.pop();
+  return lower.concat(upper);
+}
 
 function ClusterContent() {
   const searchParams = useSearchParams();
@@ -28,6 +67,8 @@ function ClusterContent() {
   const [isOfflineCache, setIsOfflineCache] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [selectedArticle, setSelectedArticle] = useState<any>(null);
+  const [selectedNarrative, setSelectedNarrative] = useState<{id: string, text: string, nds: number, sources: string[]} | null>(null);
   
   const [algorithm, setAlgorithm] = useState("hdbscan");
   const [kValue, setKValue] = useState<number | "">("");
@@ -115,24 +156,52 @@ function ClusterContent() {
     return a - b;
   });
 
-  const plotData = uniqueClusters.map(clusterId => {
+  const plotData: any[] = [];
+  uniqueClusters.forEach(clusterId => {
     const clusterPoints = data.filter(d => d.cluster === clusterId);
-    return {
+    
+    if (clusterId !== -1 && clusterPoints.length > 2) {
+      const hull = computeConvexHull(clusterPoints.map(p => ({x: p.x, y: p.y})));
+      hull.push(hull[0]); // close loop
+      plotData.push({
+        x: hull.map((p: any) => p.x),
+        y: hull.map((p: any) => p.y),
+        mode: "lines",
+        fill: "toself",
+        fillcolor: "rgba(163, 163, 163, 0.05)",
+        line: { color: "rgba(163, 163, 163, 0.2)", width: 1, shape: "spline" },
+        hoverinfo: "skip",
+        showlegend: false,
+        legendgroup: `cluster_${clusterId}`
+      });
+    }
+
+    plotData.push({
       x: clusterPoints.map(d => d.x),
       y: clusterPoints.map(d => d.y),
       customdata: clusterPoints.map(d => d.id),
       type: "scatter",
       mode: "markers",
+      legendgroup: `cluster_${clusterId}`,
       name: clusterId === -1 ? "Noise (Unclustered)" : `Narrative ${clusterId + 1}`,
       text: clusterPoints.map(d => {
         let distHtml = "";
         if (d.distance_from_center !== undefined && clusterId !== -1) {
           const dist = d.distance_from_center;
-          if (dist < 0.2) distHtml = `<br><br><span style="color:#d9f99d;">🟢 Core article (Dist: ${dist})</span>`;
-          else if (dist < 0.4) distHtml = `<br><br><span style="color:#fef08a;">🟡 Typical article (Dist: ${dist})</span>`;
-          else distHtml = `<br><br><span style="color:#fca5a5;">🔴 Peripheral article (Dist: ${dist})</span>`;
+          if (dist < 0.2) distHtml = `<br><span style="color:#d9f99d;">🟢 Core article (Dist: ${dist})</span>`;
+          else if (dist < 0.4) distHtml = `<br><span style="color:#fef08a;">🟡 Typical article (Dist: ${dist})</span>`;
+          else distHtml = `<br><span style="color:#fca5a5;">🔴 Peripheral article (Dist: ${dist})</span>`;
         }
-        return `<b>${d.source}</b><br>${d.title}${distHtml}`;
+        
+        let dateStr = "";
+        if (d.publish_date) {
+            const dateObj = new Date(d.publish_date);
+            dateStr = isNaN(dateObj.getTime()) ? d.publish_date.slice(0, 10) : dateObj.toLocaleDateString();
+        }
+        
+        let descHtml = d.description ? `<br><br><span style="color:#a3a3a3; font-size:11px;">${d.description.length > 150 ? d.description.substring(0, 150) + "..." : d.description}</span>` : "";
+        
+        return `<b>${d.source}</b> <span style="color:#737373; font-size:10px; margin-left:8px;">${dateStr}</span><br><span style="font-size:13px; font-weight:500;">${d.title}</span>${descHtml}<br>${distHtml}<br><br><i style="color:#60a5fa; font-size:11px;">✨ Click to read full article</i>`;
       }),
       hoverinfo: "text",
       hoverlabel: { bgcolor: "#171717", font: { color: "white" }, align: "left" },
@@ -141,7 +210,7 @@ function ClusterContent() {
         opacity: clusterId === -1 ? 0.25 : 0.85,
         line: { width: 1, color: "#171717" }
       }
-    };
+    });
   });
 
   return (
@@ -168,9 +237,9 @@ function ClusterContent() {
               onChange={(e) => setDimReduction(e.target.value)}
               className="bg-transparent text-sm focus:outline-none cursor-pointer text-blue-400 font-medium pr-1"
             >
-              <option className="bg-neutral-900 text-white" value="umap" title="Good for exploring both local clusters and overall structure.">UMAP (Balanced)</option>
-              <option className="bg-neutral-900 text-white" value="tsne" title="Prioritizes distinct, separated local clusters.">t-SNE (Cluster-focused)</option>
-              <option className="bg-neutral-900 text-white" value="pca" title="Provides a quick, linear overview of main variances.">PCA (Overview)</option>
+              <option className="bg-neutral-900 text-white" value="umap" title="Good for exploring both local clusters and overall structure.">Balanced (UMAP)</option>
+              <option className="bg-neutral-900 text-white" value="tsne" title="Prioritizes distinct, separated local clusters.">Cluster-focused (t-SNE)</option>
+              <option className="bg-neutral-900 text-white" value="pca" title="Provides a quick, linear overview of main variances.">Overview (PCA)</option>
             </select>
           </div>
           
@@ -183,11 +252,11 @@ function ClusterContent() {
               onChange={(e) => setAlgorithm(e.target.value)}
               className="bg-transparent text-sm focus:outline-none cursor-pointer pr-1"
             >
-              <option className="bg-neutral-900 text-white" value="hdbscan" title="Automatically finds groups of varying densities without choosing a number.">HDBSCAN (Automatic)</option>
-              <option className="bg-neutral-900 text-white" value="kmeans" title="Lets you control the exact number of narrative groups.">K-Means (Set group count)</option>
-              <option className="bg-neutral-900 text-white" value="gmm" title="Models groups probabilistically.">GMM</option>
-              <option className="bg-neutral-900 text-white" value="agglomerative" title="Builds groups hierarchically from bottom up.">Agglomerative</option>
-              <option className="bg-neutral-900 text-white" value="affinity" title="Creates groups by data points sending messages to each other.">Affinity</option>
+              <option className="bg-neutral-900 text-white" value="hdbscan" title="Automatically finds groups of varying densities without choosing a number.">Automatic (HDBSCAN)</option>
+              <option className="bg-neutral-900 text-white" value="kmeans" title="Lets you control the exact number of narrative groups.">Set group count (K-Means)</option>
+              <option className="bg-neutral-900 text-white" value="gmm" title="Models groups probabilistically.">Probabilistic (GMM)</option>
+              <option className="bg-neutral-900 text-white" value="agglomerative" title="Builds groups hierarchically from bottom up.">Hierarchical (Agglomerative)</option>
+              <option className="bg-neutral-900 text-white" value="affinity" title="Creates groups by data points sending messages to each other.">Message passing (Affinity)</option>
             </select>
           </div>
           
@@ -260,9 +329,8 @@ function ClusterContent() {
               onClick={(e: any) => {
                 if (e.points && e.points.length > 0) {
                   const articleId = e.points[0].customdata;
-                  const urlParams = new URLSearchParams({ q: query, algo: algorithm, dim: dimReduction });
-                  if (kValue !== "") urlParams.append("k", kValue.toString());
-                  router.push(`/article/${encodeURIComponent(articleId)}?${urlParams.toString()}`);
+                  const article = data.find(d => d.id === articleId);
+                  if (article) setSelectedArticle(article);
                 }
               }}
               layout={{
@@ -292,8 +360,11 @@ function ClusterContent() {
 
         {/* AI Summarization Panel */}
         {!loading && Object.keys(summaries).length > 0 && (
-          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 overflow-y-auto max-h-[45vh] flex-shrink-0 animate-in fade-in slide-in-from-bottom-2 duration-500">
-             <h3 className="text-lg font-bold text-white mb-4 border-b border-neutral-800 pb-2 flex items-center justify-between">
+          <div className="relative bg-neutral-900/60 backdrop-blur-xl border border-neutral-800/50 rounded-3xl p-6 overflow-y-auto max-h-[45vh] flex-shrink-0 shadow-2xl animate-in fade-in slide-in-from-bottom-2 duration-500 styled-scrollbar">
+             {/* Subtle top fade for scroll indication */}
+             <div className="sticky top-[-24px] left-0 right-0 h-6 bg-gradient-to-b from-neutral-900/80 to-transparent pointer-events-none z-10 -mx-6 mb-4" />
+             
+             <h3 className="text-lg font-bold text-white mb-6 border-b border-neutral-800/50 pb-3 flex items-center justify-between relative z-10">
                <div className="flex items-center gap-2">
                  <Sparkles className="w-5 h-5 text-blue-400" />
                  AI Narrative Summaries
@@ -304,7 +375,7 @@ function ClusterContent() {
                  </span>
                )}
              </h3>
-             <div className="space-y-6">
+             <div className="flex flex-col gap-4 w-full pb-4">
                {uniqueClusters.filter(c => c !== -1).map(clusterId => {
                  let text = summaries[clusterId.toString()] || "";
                  if (text.includes('.')) {
@@ -316,47 +387,94 @@ function ClusterContent() {
                  const clusterPoints = data.filter(d => d.cluster === clusterId);
                  const sources = Array.from(new Set(clusterPoints.map(d => d.source))).filter(Boolean);
                  
-                 return (
-                   <div key={clusterId} className="flex flex-col gap-2">
+                   return (
+                     <div key={clusterId} className="relative overflow-hidden group flex flex-col gap-3 bg-neutral-950/40 hover:bg-neutral-900/60 border border-neutral-800/60 hover:border-neutral-700/80 rounded-xl p-6 transition-all duration-300 shadow-sm">
+                       <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-blue-500/50 to-purple-500/50 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                       <div className="flex items-center gap-3">
                         <span className="font-bold text-blue-400 bg-blue-900/30 px-3 py-1 rounded border border-blue-900/50">
                           Narrative {clusterId + 1}
                         </span>
                         {ndsScores[clusterId.toString()] !== undefined && (
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-bold border ${
+                          <span className={`text-[10px] px-2.5 py-1 rounded-md font-bold border ${
                             ndsScores[clusterId.toString()] < 0.3 
-                              ? 'bg-green-950/50 text-green-400 border-green-900/50' 
+                              ? 'bg-green-950/30 text-green-400 border-green-900/30' 
                               : ndsScores[clusterId.toString()] < 0.6
-                                ? 'bg-yellow-950/50 text-yellow-500 border-yellow-900/50'
-                                : 'bg-red-950/50 text-red-400 border-red-900/50'
+                                ? 'bg-yellow-950/30 text-yellow-500 border-yellow-900/30'
+                                : 'bg-red-950/30 text-red-400 border-red-900/30'
                           }`} title={`Narrative Diversity Score: ${ndsScores[clusterId.toString()]} (higher means broader discourse)`}>
                             NDS: {ndsScores[clusterId.toString()]}
                           </span>
                         )}
                       </div>
-                      <p className="text-neutral-300 leading-relaxed font-medium pl-1">
+                      
+                      <p className="text-neutral-300 group-hover:text-neutral-200 transition-colors duration-300 group-hover:text-neutral-200 transition-colors duration-300 leading-relaxed text-[15px] font-medium flex-grow relative z-10 group-hover:text-neutral-100 transition-colors duration-300 line-clamp-3 line-clamp-3">
                         {text}
                       </p>
-                      <p className="text-xs text-neutral-500 font-mono uppercase tracking-wider pl-1 mt-1">
-                        Sources: <span className="text-neutral-400">{sources.join(", ") || "Unknown"}</span>
-                      </p>
+                      <div className="flex items-center justify-between mt-1 border-t border-neutral-800/50 pt-3">
+                        <p className="text-xs text-neutral-500 font-mono uppercase tracking-wider pl-1 truncate max-w-[70%]">
+                          Sources: <span className="text-neutral-400">{sources.join(", ") || "Unknown"}</span>
+                        </p>
+                        <button 
+                          onClick={() => setSelectedNarrative({ id: clusterId.toString(), text, nds: ndsScores[clusterId.toString()], sources })}
+                          className="text-xs text-blue-400 hover:text-blue-300 font-semibold flex items-center gap-1 bg-blue-900/10 hover:bg-blue-900/30 px-3 py-1.5 rounded-lg transition-colors shrink-0"
+                        >
+                          View Full Text <ChevronRight className="w-3 h-3" />
+                        </button>
+                      </div>
                    </div>
                  );
                })}
                
                {uniqueClusters.includes(-1) && (
-                 <div className="flex flex-col gap-2 opacity-50 mt-6 pt-6 border-t border-neutral-800/50">
+                 <div className="flex flex-col gap-3 bg-neutral-950/20 border border-dashed border-neutral-800/40 rounded-xl p-6 opacity-60 hover:opacity-100 transition-opacity">
                     <div className="flex items-center gap-3">
-                      <span className="font-bold text-neutral-500 bg-neutral-800/50 px-3 py-1 rounded border border-neutral-700/50">
+                      <span className="font-bold text-xs text-neutral-500 bg-neutral-900/50 px-2.5 py-1 rounded-md border border-neutral-800/50">
                         Narrative Noise
                       </span>
                     </div>
-                    <p className="text-neutral-400 italic pl-1">
+                    <p className="text-neutral-400 italic text-[14px]">
                       {summaries["-1"] || "Unclustered outliers and noise."}
                     </p>
                  </div>
                )}
              </div>
+          </div>
+        )}
+
+        {/* Narrative Full Text Modal */}
+        {selectedNarrative && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 md:p-12 animate-in fade-in duration-200">
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm cursor-pointer" onClick={() => setSelectedNarrative(null)} />
+            <div className="relative w-full max-w-2xl bg-neutral-900 border border-neutral-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-300">
+              <div className="flex items-center justify-between p-5 border-b border-neutral-800/60 bg-neutral-900/50">
+                <div className="flex items-center gap-3">
+                  <span className="font-bold text-sm text-blue-400 bg-blue-900/30 px-3 py-1 rounded-md border border-blue-900/50">
+                    Narrative {parseInt(selectedNarrative.id) + 1}
+                  </span>
+                  {selectedNarrative.nds !== undefined && (
+                    <span className="text-xs font-bold text-neutral-400 bg-neutral-800/50 px-2 py-1 rounded-md">
+                      NDS: {selectedNarrative.nds}
+                    </span>
+                  )}
+                </div>
+                <button 
+                  onClick={() => setSelectedNarrative(null)}
+                  className="p-2 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded-full transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-6 md:p-8 overflow-y-auto max-h-[60vh] styled-scrollbar">
+                <p className="text-neutral-200 text-lg leading-relaxed font-medium whitespace-pre-wrap">
+                  {selectedNarrative.text}
+                </p>
+              </div>
+              <div className="p-5 border-t border-neutral-800/60 bg-neutral-900/50">
+                <p className="text-xs text-neutral-500 font-mono uppercase tracking-wider">
+                  Sources: <span className="text-neutral-400">{selectedNarrative.sources.join(", ") || "Unknown"}</span>
+                </p>
+              </div>
+            </div>
           </div>
         )}
       </main>

@@ -15,7 +15,8 @@ type ArticleSentiment = {
 type Article = {
   id: string;
   title: string;
-  body: string;
+  description: string;
+  body?: string;
   source?: string;
   publish_date?: string;
   url?: string;
