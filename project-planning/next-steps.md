@@ -14,5 +14,8 @@ Next Steps:
 - Step 3 features (User accounts, Article Enjoyment Predictor, Blind News Stand, etc.)
 - Keeping a window for chromaDB (e.g. only keep last 30 days of articles) rather than indefinite
 - Research how some Neural Network could be used to improve or extend project
+- Cross-source contradiction finder
+- Source Analysis Page
+- Geographical Source/Coverage Viewer
 - If going with different news source, what other features could we add?
 - Research deployability of project (env, models, etc.)

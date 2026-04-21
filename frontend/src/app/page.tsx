@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Loader2, BarChart2, Compass, Layers, Database, WifiOff, Link as LinkIcon } from "lucide-react";
+import { Search, Loader2, BarChart2, Compass, Layers, Database, WifiOff, Globe, Link as LinkIcon } from "lucide-react";
 import DailyGradient from "@/components/DailyGradient";
+import GlobalMaxima from "@/components/GlobalMaxima";
 
 type ArticleSentiment = {
   label: string;
@@ -15,8 +16,7 @@ type ArticleSentiment = {
 type Article = {
   id: string;
   title: string;
-  description: string;
-  body?: string;
+  body: string;
   source?: string;
   publish_date?: string;
   url?: string;
@@ -191,7 +191,7 @@ export default function Home() {
   const [searchedQuery, setSearchedQuery] = useState("");
   const [isOfflineCache, setIsOfflineCache] = useState(false);
   const [backendReady, setBackendReady] = useState(false);
-  const [activeTab, setActiveTab] = useState<"search" | "gradient">("search");
+  const [activeTab, setActiveTab] = useState<"search" | "gradient" | "global">("search");
   const [localMode, setLocalMode] = useState(false);
   const router = useRouter();
 
@@ -265,40 +265,64 @@ export default function Home() {
         </div>
       )}
 
-      <div className={`z-10 w-full max-w-3xl text-center space-y-8 transition-all duration-500 ${articles.length > 0 || activeTab === 'gradient' ? 'mt-0' : 'mt-[20vh]'}`}>
+      <div className={`z-10 w-full max-w-3xl text-center space-y-8 transition-all duration-500 ${articles.length > 0 || activeTab === 'gradient' || activeTab === 'global' ? 'mt-0' : 'mt-[20vh]'}`}>
         <h1 className="text-6xl md:text-8xl lg:text-[7rem] font-extrabold tracking-tighter text-white mb-6 relative group inline-block whitespace-nowrap">
           The Local{" "}
           <span className="relative inline-block text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-500 to-purple-500 transition-all duration-700 ease-out group-hover:drop-shadow-[0_0_35px_rgba(99,102,241,0.8)] group-hover:scale-[0.96] group-hover:translate-y-1">
             Minima
           </span>
         </h1>
-        {articles.length === 0 && activeTab === 'search' && (
+        {articles.length === 0 && activeTab === 'search' && !searchedQuery && (
           <p className="text-lg text-neutral-400 max-w-xl mx-auto">
             Enter a topic and uncover the narratives across today's news.
           </p>
         )}
 
-        <div className="flex justify-center gap-4 mt-8 slide-in-from-bottom-4 animate-in fade-in duration-500">
-           <button onClick={() => setActiveTab("search")} className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 ${activeTab === 'search' ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}>
+        <div className="flex justify-center gap-4 mt-8 flex-wrap slide-in-from-bottom-4 animate-in fade-in duration-500">
+           <button 
+              onClick={() => {
+                  setActiveTab("search");
+                  setQuery("");
+                  setSearchedQuery("");
+                  setArticles([]);
+              }} 
+              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 ${activeTab === 'search' ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}>
               <Layers className="w-5 h-5" /> News Clusters
            </button>
            <button 
-              onClick={() => setActiveTab("gradient")} 
+              onClick={() => {
+                 setActiveTab("gradient");
+                 setQuery("");
+                 setSearchedQuery("");
+                 setArticles([]);
+              }} 
               disabled={!backendReady}
               className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${activeTab === 'gradient' ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
            >
               {backendReady ? <Compass className="w-5 h-5" /> : <Loader2 className="w-5 h-5 animate-spin" />} Daily Gradient
            </button>
+           <button 
+              onClick={() => {
+                 setActiveTab("global");
+                 setQuery("");
+                 setSearchedQuery("");
+                 setArticles([]);
+              }}
+              disabled={!backendReady}
+              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${activeTab === 'global' ? 'bg-indigo-600 text-white shadow-[0_0_20px_rgba(79,70,229,0.4)] border-indigo-500' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
+           >
+              {backendReady ? <Globe className="w-5 h-5" /> : <Loader2 className="w-5 h-5 animate-spin" />} Global Maxima
+           </button>
         </div>
 
-        {activeTab === "search" && (
-          <form onSubmit={handleSearch} className="relative mt-8 w-full mx-auto animate-in fade-in duration-500">
+        {(activeTab === "search" || activeTab === "global") && (
+          <form onSubmit={handleSearch} className="relative mt-8 w-full max-w-3xl mx-auto animate-in fade-in duration-500">
             <div className="relative flex items-center">
             <input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder={backendReady ? "e.g. Artificial Intelligence, Global Economy..." : "Warming up AI vector models..."}
+              placeholder={backendReady ? (activeTab === "global" ? "Enter a topic to explore global news narratives" : "e.g. Artificial Intelligence, Global Economy...") : "Warming up AI vector models..."}
               className="w-full pl-6 pr-32 py-4 bg-neutral-900/80 border border-neutral-800 rounded-2xl text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-lg shadow-xl backdrop-blur-sm disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={loading || !backendReady}
             />
@@ -328,7 +352,7 @@ export default function Home() {
       </div>
 
       {activeTab === "search" && articles.length > 0 && (
-        <div className="z-10 w-full max-w-3xl mt-12 space-y-4 pb-20 animate-in fade-in duration-500">
+        <div className="z-10 w-full max-w-5xl mx-auto mt-12 space-y-4 pb-20 animate-in fade-in duration-500">
           <h2 className="text-2xl font-bold text-white mb-6 border-b border-neutral-800 pb-2 flex justify-between items-end">
             <span>Fetched Articles</span>
             <span className="text-sm font-normal text-neutral-500">{articles.length} Results</span>
@@ -385,6 +409,12 @@ export default function Home() {
       )}
 
       {activeTab === "gradient" && <DailyGradient localMode={localMode} />}
+      
+      {activeTab === "global" && (
+         <div className="w-full mt-12 mb-20 animate-in fade-in duration-500">
+            <GlobalMaxima key={searchedQuery} query={searchedQuery} localMode={localMode} />
+         </div>
+      )}
     </div>
   );
 }

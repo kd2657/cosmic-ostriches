@@ -25,6 +25,8 @@ def fetch_news(query: str, page_size: int = 50) -> List[Dict[str, Any]]:
         "articlesSortBy": "rel",
         "resultType": "articles",
         "includeArticleCategories": True,
+        "includeArticleLocation": True,
+        "includeSourceLocation": True,
         "apiKey": NEWS_API_AI_KEY,
         "articleBodyLen": -1
     }
@@ -58,7 +60,26 @@ def fetch_news(query: str, page_size: int = 50) -> List[Dict[str, Any]]:
         # We need at least some semantic content to work with
         if len(title.split()) > 3 or len(body.split()) > 10:
             uid = article.get("uri") or f"article-{idx}-{title[:10]}"
-            source = article.get("source", {}).get("title", "Unknown")
+            source_obj = article.get("source", {})
+            source = source_obj.get("title", "Unknown")
+            
+            # Geographic resolution for Global Maxima
+            country = None
+            
+            # First attempt: Source location
+            loc = source_obj.get("location")
+            if not loc:
+                # Fallback attempt: Article event location
+                loc = article.get("location", {})
+                
+            if isinstance(loc, dict):
+                c_obj = loc.get("country", loc) # Fallback to loc itself if country prop is missing
+                if isinstance(c_obj, dict):
+                    lbl = c_obj.get("label", {})
+                    if isinstance(lbl, dict):
+                        country = lbl.get("eng", None)
+                    elif isinstance(lbl, str):
+                        country = lbl
             
             cleaned_articles.append({
                 "id": uid,
@@ -67,6 +88,7 @@ def fetch_news(query: str, page_size: int = 50) -> List[Dict[str, Any]]:
                 "category": category,
                 "url": article.get("url"),
                 "source": source,
+                "country": country,
                 "publish_date": article.get("dateTimePub", ""),
                 # The precise FULL TEXT we'll embed
                 "embed_text": f"{title}. {body}"
@@ -90,6 +112,8 @@ def fetch_daily_gradient(page_size: int = 100) -> List[Dict[str, Any]]:
         "articlesSortBy": "date",
         "resultType": "articles",
         "includeArticleCategories": True,
+        "includeArticleLocation": True,
+        "includeSourceLocation": True,
         "apiKey": NEWS_API_AI_KEY,
         "articleBodyLen": -1
     }
@@ -120,7 +144,26 @@ def fetch_daily_gradient(page_size: int = 100) -> List[Dict[str, Any]]:
         
         if len(title.split()) > 3 or len(body.split()) > 10:
             uid = article.get("uri") or f"daily-{idx}-{title[:10]}"
-            source = article.get("source", {}).get("title", "Unknown")
+            source_obj = article.get("source", {})
+            source = source_obj.get("title", "Unknown")
+            
+            # Geographic resolution
+            country = None
+            
+            # First attempt: Source location
+            loc = source_obj.get("location")
+            if not loc:
+                # Fallback attempt: Article event location
+                loc = article.get("location", {})
+                
+            if isinstance(loc, dict):
+                c_obj = loc.get("country", loc)
+                if isinstance(c_obj, dict):
+                    lbl = c_obj.get("label", {})
+                    if isinstance(lbl, dict):
+                        country = lbl.get("eng", None)
+                    elif isinstance(lbl, str):
+                        country = lbl
             
             cleaned_articles.append({
                 "id": uid,
@@ -129,6 +172,7 @@ def fetch_daily_gradient(page_size: int = 100) -> List[Dict[str, Any]]:
                 "category": category,
                 "url": article.get("url"),
                 "source": source,
+                "country": country,
                 "publish_date": article.get("dateTimePub", ""),
                 "embed_text": f"{title}. {body}"
             })
