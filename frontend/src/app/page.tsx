@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Search, Loader2, BarChart2, Compass, Layers, Database, WifiOff, Globe, Link as LinkIcon } from "lucide-react";
 import DailyGradient from "@/components/DailyGradient";
 import GlobalMaxima from "@/components/GlobalMaxima";
+import SystemBoot from "@/components/SystemBoot";
 
 type ArticleSentiment = {
   label: string;
@@ -191,24 +192,29 @@ export default function Home() {
   const [searchedQuery, setSearchedQuery] = useState("");
   const [isOfflineCache, setIsOfflineCache] = useState(false);
   const [backendReady, setBackendReady] = useState(false);
+  const [showBoot, setShowBoot] = useState(true);
   const [activeTab, setActiveTab] = useState<"search" | "gradient" | "global">("search");
   const [localMode, setLocalMode] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
-    const checkHealth = async () => {
+    // Poll /api/status to check if models are loaded
+    const checkStatus = async () => {
       try {
-        const res = await fetch("http://localhost:8000/health");
+        const res = await fetch("http://localhost:8000/api/status");
         if (res.ok) {
-          setBackendReady(true);
-        } else {
-          setTimeout(checkHealth, 1000);
+          const data = await res.json();
+          if (data.ready) {
+            setBackendReady(true);
+            return; // Stop polling
+          }
         }
+        setTimeout(checkStatus, 800);
       } catch (e) {
-        setTimeout(checkHealth, 1000);
+        setTimeout(checkStatus, 800);
       }
     };
-    checkHealth();
+    checkStatus();
   }, []);
   
   useEffect(() => {
@@ -243,6 +249,15 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-neutral-950 flex flex-col items-center py-20 px-4 relative overflow-hidden">
+      {showBoot && !backendReady && (
+        <SystemBoot onReady={() => {
+          setBackendReady(true);
+          setShowBoot(false);
+        }} />
+      )}
+      {showBoot && backendReady && (
+        <SystemBoot onReady={() => setShowBoot(false)} />
+      )}
       <BackgroundBlobs />
 
       <div className="absolute top-4 right-4 z-50 animate-in fade-in slide-in-from-top-4 duration-500">

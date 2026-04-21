@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { ArrowLeft, Loader2, Settings2, Sparkles, Info, X, ExternalLink, ChevronRight } from "lucide-react";
+import ClusterLoadingBar from "@/components/ClusterLoadingBar";
 
 const formatTextIntoParagraphs = (text: string) => {
   if (!text) return ["Content unavailable."];
@@ -312,9 +313,8 @@ function ClusterContent() {
         
         <div className="flex-grow bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden relative min-h-[55vh]">
           {loading && (
-            <div className="absolute inset-0 z-20 bg-neutral-900/80 backdrop-blur-sm flex flex-col items-center justify-center">
-              <Loader2 className="w-10 h-10 animate-spin text-blue-500 mb-4" />
-              <p className="text-neutral-400 animate-pulse">Vectorizing, clustering, and generating AI summaries...</p>
+            <div className="absolute inset-0 z-20 bg-neutral-950/90 backdrop-blur-sm flex items-center justify-center">
+              <ClusterLoadingBar />
             </div>
           )}
           

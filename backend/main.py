@@ -13,16 +13,32 @@ if sys.platform != "win32":
     except Exception:
         pass
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 from api import fetch_news, fetch_daily_gradient
-from ml import vectorize_and_store, process_batch_cluster, query_local_database, compute_similarity_scores, process_daily_gradient, get_article_by_id, compute_global_divergence
+from ml import vectorize_and_store, process_batch_cluster, query_local_database, compute_similarity_scores, process_daily_gradient, get_article_by_id, compute_global_divergence, model_manager
 from sentiment import SentimentClassifier
 
-app = FastAPI(title="The Local Minima API")
-sentiment_classifier = SentimentClassifier()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Start model loading in the background when the server boots."""
+    model_manager.start_background_init()
+    yield
+
+
+app = FastAPI(title="The Local Minima API", lifespan=lifespan)
+
+# Sentiment classifier loads its own model on first use (deferred)
+_sentiment_classifier = None
+def get_sentiment_classifier():
+    global _sentiment_classifier
+    if _sentiment_classifier is None:
+        _sentiment_classifier = SentimentClassifier()
+    return _sentiment_classifier
 
 # Allow Next.js frontend to talk to this backend
 app.add_middleware(
@@ -64,7 +80,7 @@ def attach_article_sentiment(articles):
     if not sentiment_inputs:
         return articles
 
-    results = sentiment_classifier.classify_batch(sentiment_inputs)
+    results = get_sentiment_classifier().classify_batch(sentiment_inputs)
     for index, result in zip(sentiment_indexes, results):
         articles[index]["sentiment"] = result.to_dict()
 
@@ -228,6 +244,12 @@ def run_global_analysis(req: SearchRequest):
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+
+@app.get("/api/status")
+def get_system_status():
+    """Returns the current model initialization status for the frontend boot sequence."""
+    return model_manager.get_status()
 
 
 @app.get("/api/article/{article_id:path}")

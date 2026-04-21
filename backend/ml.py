@@ -20,15 +20,12 @@ warnings.filterwarnings("ignore", category=UserWarning, module="umap.*")
 warnings.filterwarnings("ignore", module="transformers.*")
 transformers_logging.set_verbosity_error()
 
-# Load the vectorizer model
-# all-MiniLM-L6-v2 is selected to balance performance with low compute 
-print("Loading model...")
-model = SentenceTransformer("all-MiniLM-L6-v2")
+from model_manager import ModelManager
 
-print("Loading LLM summarization pipeline (Offline NLP)...")
-summarizer = pipeline("text-generation", model="distilgpt2")
+# Singleton model manager — created immediately, but models load in background
+model_manager = ModelManager()
 
-# Initialize ChromaDB persistent client locally
+# Initialize ChromaDB persistent client locally (fast, no ML involved)
 CHROMA_PATH = os.path.join(os.path.dirname(__file__), "chroma_db")
 os.makedirs(CHROMA_PATH, exist_ok=True)
 chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
@@ -37,6 +34,19 @@ collection = chroma_client.get_or_create_collection(name="news_diversity_v3_coll
 # UMAP relies on Numba's workqueue threading layer in this environment, which
 # can abort the process if multiple FastAPI threads enter it concurrently.
 _cluster_pipeline_lock = Lock()
+
+# Safe accessors that raise clear errors if models aren't ready yet
+def _get_model():
+    m = model_manager.model
+    if m is None:
+        raise RuntimeError("Vector model is still loading. Please wait for system boot to complete.")
+    return m
+
+def _get_summarizer():
+    s = model_manager.summarizer
+    if s is None:
+        raise RuntimeError("Summarization model is still loading. Please wait for system boot to complete.")
+    return s
 
 def vectorize_and_store(articles: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
@@ -51,7 +61,7 @@ def vectorize_and_store(articles: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
     if new_articles:
         texts_to_embed = [a["embed_text"] for a in new_articles]
-        embeddings = model.encode(texts_to_embed).tolist()
+        embeddings = _get_model().encode(texts_to_embed).tolist()
         
         ids = [a["id"] for a in new_articles]
         metadatas = [{
@@ -85,7 +95,7 @@ def query_local_database(query_text: str, n_results: int = 50) -> List[Dict[str,
     if collection.count() == 0:
         return []
         
-    query_embedding = model.encode([query_text]).tolist()
+    query_embedding = _get_model().encode([query_text]).tolist()
     
     # Query ChromaDB (returns Dict of lists)
     results = collection.query(
@@ -118,7 +128,7 @@ def compute_similarity_scores(query: str, articles: List[Dict[str, Any]]) -> Lis
         return []
     
     # Do not force convert to PyTorch tensor here so numpy can bridge them safely
-    query_emb = model.encode(query)
+    query_emb = _get_model().encode(query)
     
     ids = [a["id"] for a in articles]
     data = collection.get(ids=ids, include=["embeddings"])
@@ -398,7 +408,7 @@ def process_batch_cluster(
             prompt = f"Summarize the context: {input_text}"
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                out = summarizer(
+                out = _get_summarizer()(
                     prompt, 
                     max_new_tokens=25, 
                     temperature=0.3, 
