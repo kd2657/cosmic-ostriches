@@ -362,20 +362,28 @@ def process_batch_cluster(
             
             import json
             json_text = response.text.strip()
-            if json_text.startswith("```json"):
-                json_text = json_text[7:]
-            elif json_text.startswith("```"):
-                json_text = json_text[3:]
-            if json_text.endswith("```"):
-                json_text = json_text[:-3]
+            
+            # Robust extraction of JSON block in case model prepends conversational text
+            if "```json" in json_text:
+                json_text = json_text.split("```json")[1].split("```")[0].strip()
+            elif "```" in json_text:
+                json_text = json_text.split("```")[1].split("```")[0].strip()
+            # If no backticks, we assume the whole response is the JSON (or we try to find the first '{' and last '}')
+            elif "{" in json_text and "}" in json_text:
+                start_idx = json_text.find("{")
+                end_idx = json_text.rfind("}") + 1
+                json_text = json_text[start_idx:end_idx]
                 
             batch_summaries = json.loads(json_text.strip())
             
             for cid in target_clusters:
-                # Try plain numeric key first ("0"), then fall back to "Cluster 0" format
+                # Try plain numeric key first ("0"), then fall back to other formats
                 summary = (
                     batch_summaries.get(str(cid)) or
-                    batch_summaries.get(f"Cluster {cid}")
+                    batch_summaries.get(f"Cluster {cid}") or
+                    batch_summaries.get(f"Narrative {cid}") or
+                    batch_summaries.get(f"cluster_{cid}") or
+                    batch_summaries.get(f"narrative_{cid}")
                 )
                 summaries[str(cid)] = summary if summary else "Narrative summary unavailable."
             summary_generated = True

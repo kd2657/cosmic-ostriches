@@ -343,8 +343,12 @@ function ClusterContent() {
             <Plot
               data={plotData as any}
               onLegendClick={(e: any) => {
-                const cId = uniqueClusters[e.curveNumber];
-                setSelectedCluster(prev => prev === cId ? null : cId);
+                const trace = plotData[e.curveNumber];
+                if (trace && trace.legendgroup) {
+                  const cIdStr = trace.legendgroup.replace('cluster_', '');
+                  const cId = parseInt(cIdStr, 10);
+                  setSelectedCluster(prev => prev === cId ? null : cId);
+                }
                 return false; 
               }}
               onClick={(e: any) => {
