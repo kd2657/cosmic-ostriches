@@ -205,6 +205,40 @@ class CustomPCA:
         self.components_ = Vt[:self.n_components]
         return X_centered @ self.components_.T
 
+def _get_cluster_labels(embeddings: np.ndarray, method: str, cluster_k: Optional[int]) -> np.ndarray:
+    """Internal helper to apply clustering algorithm."""
+    if method == "kmeans" and cluster_k:
+        k = min(cluster_k, len(embeddings))
+        return CustomKMeans(n_clusters=k, random_state=42).fit_predict(embeddings)
+    elif method == "gmm" and cluster_k:
+        k = min(cluster_k, len(embeddings))
+        return GaussianMixture(n_components=k, random_state=42).fit_predict(embeddings)
+    elif method == "agglomerative":
+        k = min(cluster_k, len(embeddings)) if cluster_k else None
+        agg = AgglomerativeClustering(n_clusters=k) if k else AgglomerativeClustering(n_clusters=None, distance_threshold=0.5)
+        return agg.fit_predict(embeddings)
+    elif method == "affinity":
+        return AffinityPropagation(random_state=42).fit_predict(embeddings)
+    else:
+        min_cluster = min(len(embeddings), 3)
+        if len(embeddings) < 3:
+            return np.zeros(len(embeddings), dtype=int)
+        return HDBSCAN(min_cluster_size=min_cluster, min_samples=2).fit_predict(embeddings)
+
+def _get_reduced_embeddings(embeddings: np.ndarray, dim_reduction: str) -> np.ndarray:
+    """Internal helper for 2D dimensionality reduction."""
+    if dim_reduction == "tsne" and len(embeddings) > 1:
+        perplexity = min(30, max(1, len(embeddings) - 1))
+        reducer = TSNE(n_components=2, perplexity=perplexity, random_state=42, init='pca', learning_rate='auto')
+        return reducer.fit_transform(embeddings)
+    elif dim_reduction == "pca":
+        return CustomPCA(n_components=2).fit_transform(embeddings)
+    else:
+        n_neighbors = min(15, len(embeddings) - 1)
+        if n_neighbors < 2:
+            return np.zeros((len(embeddings), 2))
+        return UMAP(n_neighbors=n_neighbors, min_dist=0.1, n_components=2, random_state=42).fit_transform(embeddings)
+
 def process_batch_cluster(
     articles: List[Dict[str, Any]], 
     method: str = "hdbscan", 
@@ -228,59 +262,8 @@ def process_batch_cluster(
     embeddings = np.array(data["embeddings"])
 
     with _cluster_pipeline_lock:
-        # Clustering
-        labels = []
-        if method == "kmeans" and cluster_k:
-            k = min(cluster_k, len(embeddings))
-            kmeans = CustomKMeans(n_clusters=k, random_state=42)
-            labels = kmeans.fit_predict(embeddings)
-        elif method == "gmm" and cluster_k:
-            k = min(cluster_k, len(embeddings))
-            gmm = GaussianMixture(n_components=k, random_state=42)
-            labels = gmm.fit_predict(embeddings)
-        elif method == "agglomerative":
-            k = min(cluster_k, len(embeddings)) if cluster_k else None
-            if k:
-                agg = AgglomerativeClustering(n_clusters=k)
-            else:
-                agg = AgglomerativeClustering(n_clusters=None, distance_threshold=0.5)
-            labels = agg.fit_predict(embeddings)
-        elif method == "affinity":
-            aff = AffinityPropagation(random_state=42)
-            labels = aff.fit_predict(embeddings)
-        else:
-            # Fallback to HDBSCAN
-            # Works well when k is unknown. tuned to aggressive sensitivity.
-            min_cluster = min(len(embeddings), 3)
-            if len(embeddings) < 3:
-                labels = [0] * len(embeddings) # not enough data to cluster
-            else:
-                hdb = HDBSCAN(min_cluster_size=min_cluster, min_samples=2)
-                labels = hdb.fit_predict(embeddings)
-
-        # Dimensionality Reduction for 2D Plotting
-        if dim_reduction == "tsne" and len(embeddings) > 1:
-            # Perplexity strictly bound to sample size logic constraints
-            perplexity = min(30, max(1, len(embeddings) - 1))
-            if perplexity >= len(embeddings):
-                perplexity = len(embeddings) - 1
-                
-            if perplexity < 1:
-                reduced_embeddings = np.zeros((len(embeddings), 2))
-            else:
-                reducer = TSNE(n_components=2, perplexity=perplexity, random_state=42, init='pca', learning_rate='auto')
-                reduced_embeddings = reducer.fit_transform(embeddings)
-        elif dim_reduction == "pca":
-            pca = CustomPCA(n_components=2)
-            reduced_embeddings = pca.fit_transform(embeddings)
-        else:
-            # Fallback to standard UMAP mapping
-            n_neighbors = min(15, len(embeddings) - 1)
-            if n_neighbors < 2:
-                reduced_embeddings = np.zeros((len(embeddings), 2))
-            else:
-                reducer = UMAP(n_neighbors=n_neighbors, min_dist=0.1, n_components=2, random_state=42)
-                reduced_embeddings = reducer.fit_transform(embeddings)
+        labels = _get_cluster_labels(embeddings, method, cluster_k)
+        reduced_embeddings = _get_reduced_embeddings(embeddings, dim_reduction)
 
     from models.metrics import compute_article_distances_from_center
     article_distances = compute_article_distances_from_center(embeddings, np.array(labels))
@@ -302,20 +285,112 @@ def process_batch_cluster(
     
     for idx, article_id in enumerate(ids):
         meta = data["metadatas"][idx]
-        cluster_id = int(labels[idx])
-        
-        if cluster_id not in cluster_texts:
-            cluster_texts[cluster_id] = []
+def _generate_narrative_summaries(cluster_texts: Dict[int, List[str]], client: Optional[Any], target_clusters: List[int]) -> Dict[str, Any]:
+    """Helper to generate summaries using Gemini or local fallback."""
+    summaries = {}
+    cluster_strings = ""
+    for cluster_id in cluster_texts:
+        if cluster_id == -1:
+            summaries["-1"] = "Unclustered noise and outlier narratives."
+            continue
+        if cluster_id in target_clusters:
+            top_texts_str = "\n---\n".join(cluster_texts[cluster_id][:5])
+            cluster_strings += f"Cluster {cluster_id}:\n{top_texts_str}\n\n"
+
+    summary_generated = False
+    used_local_fallback = False if client else True
+
+    if client and target_clusters:
+        try:
+            prompt = (
+                f"You are an analytical AI bot. Read the following sets of news reporting grouped by narrative. "
+                f"Provide a short title and a strict 2-sentence summary for each narrative. "
+                f"The first sentence should summarize the core narrative. "
+                f"The second sentence MUST explicitly focus on what makes this particular narrative different from the others. "
+                f"Avoid using the word 'cluster' in your response. "
+                f"Return your response STRICTLY as a valid JSON object where each KEY is the plain narrative number as a string (e.g. \"0\", \"1\", \"2\") "
+                f"and each VALUE is a nested object containing two string fields: \"title\" and \"summary\". "
+                f"Ensure all text values are properly escaped and contain absolutely NO literal newlines. \n\n{cluster_strings}"
+            )
+            response = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=prompt,
+                config=genai.types.GenerateContentConfig(
+                    temperature=0.3, max_output_tokens=8192, response_mime_type="application/json"
+                )
+            )
+            import json
+            json_text = response.text.strip()
+            if "```json" in json_text: json_text = json_text.split("```json")[1].split("```")[0].strip()
+            elif "```" in json_text: json_text = json_text.split("```")[1].split("```")[0].strip()
+            elif "{" in json_text and "}" in json_text:
+                json_text = json_text[json_text.find("{"):json_text.rfind("}")+1]
             
-        t = meta.get("title", "")
-        b = meta.get("body", "")
+            batch_summaries = json.loads(json_text)
+            for cid in target_clusters:
+                summary = batch_summaries.get(str(cid)) or batch_summaries.get(f"Cluster {cid}") or batch_summaries.get(f"Narrative {cid}")
+                summaries[str(cid)] = summary if summary else "Narrative summary unavailable."
+            summary_generated = True
+        except Exception as e:
+            print(f"Gemini Error: {e}")
+            used_local_fallback = True
+
+    if not summary_generated:
+        for cid in target_clusters:
+            input_text = cluster_texts[cid][0][:100] if cluster_texts.get(cid) else "Global news."
+            prompt = f"Summarize the context: {input_text}"
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                out = _get_summarizer()(prompt, max_new_tokens=25, temperature=0.3, do_sample=True, return_full_text=False, pad_token_id=50256)
+            generated = out[0]["generated_text"].strip().split("\n")[0]
+            summaries[str(cid)] = generated
+
+    return summaries, used_local_fallback
+
+def process_batch_cluster(
+    articles: List[Dict[str, Any]], 
+    method: str = "hdbscan", 
+    cluster_k: Optional[int] = None,
+    dim_reduction: str = "umap"
+) -> List[Dict[str, Any]]:
+    """
+    Fetches embeddings, performs UMAP dimensionality reduction to 2D for the UI,
+    and applies the chosen clustering algorithm.
+    """
+    if not articles:
+        return []
+    
+    # Retrieve
+    ids = [a["id"] for a in articles]
+    data = collection.get(ids=ids, include=["embeddings", "metadatas"])
+    
+    if data.get("embeddings") is None or len(data["embeddings"]) == 0:
+        return []
+    
+    embeddings = np.array(data["embeddings"])
+
+    with _cluster_pipeline_lock:
+        labels = _get_cluster_labels(embeddings, method, cluster_k)
+        reduced_embeddings = _get_reduced_embeddings(embeddings, dim_reduction)
+
+    from models.metrics import compute_article_distances_from_center
+    article_distances = compute_article_distances_from_center(embeddings, np.array(labels))
+
+    # Build response points
+    results = []
+    cluster_texts = {}
+    
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    client = genai.Client(api_key=gemini_key) if gemini_key else None
+    
+    for idx, article_id in enumerate(ids):
+        meta = data["metadatas"][idx]
+        cluster_id = int(labels[idx])
+        if cluster_id not in cluster_texts: cluster_texts[cluster_id] = []
         
-        # Chunk logic based on API constraints
-        if b:
-            chunk = b[:2500] if client else b[:200]
-            cluster_texts[cluster_id].append(f"{t}: {chunk}")
-        else:
-            cluster_texts[cluster_id].append(t)
+        t, b = meta.get("title", ""), meta.get("body", "")
+        chunk = b[:2500] if client else b[:200]
+        cluster_texts[cluster_id].append(f"{t}: {chunk}" if b else t)
             
         results.append({
             "id": article_id,
@@ -331,95 +406,9 @@ def process_batch_cluster(
             "distance_from_center": round(float(article_distances[idx]), 3) if cluster_id != -1 else 0.0
         })
         
-    summaries = {}
-    cluster_strings = ""
-    target_clusters = []
-    
-    for cluster_id, texts in cluster_texts.items():
-        if cluster_id == -1:
-            summaries[str(cluster_id)] = "Unclustered noise and outlier narratives."
-            continue
+    target_clusters = [cid for cid in cluster_texts if cid != -1]
+    summaries, used_local_fallback = _generate_narrative_summaries(cluster_texts, client, target_clusters)
         
-        # Pass up to 5 full text chunks for AI analysis
-        top_texts_str = "\n---\n".join(texts[:5])
-        cluster_strings += f"Cluster {cluster_id}:\n{top_texts_str}\n\n"
-        target_clusters.append(cluster_id)
-        
-    summary_generated = False
-    
-    if client and target_clusters:
-        try:
-            prompt = (
-                f"You are an analytical AI bot. Read the following sets of news reporting grouped by narrative. "
-                f"Provide a short title and a strict 2-sentence summary for each narrative. "
-                f"The first sentence should summarize the core narrative. "
-                f"The second sentence MUST explicitly focus on what makes this particular narrative different from the others. "
-                f"Avoid using the word 'cluster' in your response. "
-                f"Return your response STRICTLY as a valid JSON object where each KEY is the plain narrative number as a string (e.g. \"0\", \"1\", \"2\") "
-                f"and each VALUE is a nested object containing two string fields: \"title\" and \"summary\". "
-                f"Ensure all text values are properly escaped and contain absolutely NO literal newlines. \n\n{cluster_strings}"
-            )
-            
-            response = client.models.generate_content(
-                model='gemini-2.5-flash',
-                contents=prompt,
-                config=genai.types.GenerateContentConfig(
-                    temperature=0.3,
-                    max_output_tokens=8192,
-                    response_mime_type="application/json"
-                )
-            )
-            
-            import json
-            json_text = response.text.strip()
-            
-            # Robust extraction of JSON block in case model prepends conversational text
-            if "```json" in json_text:
-                json_text = json_text.split("```json")[1].split("```")[0].strip()
-            elif "```" in json_text:
-                json_text = json_text.split("```")[1].split("```")[0].strip()
-            # If no backticks, we assume the whole response is the JSON (or we try to find the first '{' and last '}')
-            elif "{" in json_text and "}" in json_text:
-                start_idx = json_text.find("{")
-                end_idx = json_text.rfind("}") + 1
-                json_text = json_text[start_idx:end_idx]
-                
-            batch_summaries = json.loads(json_text.strip())
-            
-            for cid in target_clusters:
-                # Try plain numeric key first ("0"), then fall back to other formats
-                summary = (
-                    batch_summaries.get(str(cid)) or
-                    batch_summaries.get(f"Cluster {cid}") or
-                    batch_summaries.get(f"Narrative {cid}") or
-                    batch_summaries.get(f"cluster_{cid}") or
-                    batch_summaries.get(f"narrative_{cid}")
-                )
-                summaries[str(cid)] = summary if summary else "Narrative summary unavailable."
-            summary_generated = True
-        except Exception as api_err:
-            print(f"Gemini API Batch Error: {api_err} - Routing individual clusters to local offline model.")
-            used_local_fallback = True
-            
-    if not summary_generated:
-        for cid in target_clusters:
-            # Only pass a severely truncated subset of the first headline text block for GPT2 logic
-            input_text = cluster_texts[cid][0][:100] if cluster_texts.get(cid) else "Global news."
-            prompt = f"Summarize the context: {input_text}"
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                out = _get_summarizer()(
-                    prompt, 
-                    max_new_tokens=25, 
-                    temperature=0.3, 
-                    do_sample=True,
-                    return_full_text=False,
-                    pad_token_id=50256
-                )
-            generated = out[0]["generated_text"].strip()
-            if "\n" in generated: 
-                generated = generated.split("\n")[0]
-            summaries[str(cid)] = generated
     from models.metrics import compute_narrative_diversity_score
     nds_scores = compute_narrative_diversity_score(embeddings, np.array(labels))
             

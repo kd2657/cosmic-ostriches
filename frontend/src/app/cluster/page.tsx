@@ -78,6 +78,9 @@ function ClusterContent() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const lastRequestKeyRef = useRef("");
 
+  const [streamStage, setStreamStage] = useState("");
+  const [streamProgress, setStreamProgress] = useState(0);
+
   const fetchData = async (
     algo: string,
     k: number | "",
@@ -96,32 +99,62 @@ function ClusterContent() {
 
     setLoading(true);
     setError("");
+    setStreamStage("Connecting to inference engine...");
+    setStreamProgress(5);
     
     try {
       const payload: any = { query, algorithm: algo, dim_reduction: dimRed, force_local: localParam };
       if (k !== "") payload.k = k;
       
-      const res = await fetch("http://localhost:8000/api/search", {
+      const res = await fetch("http://localhost:8000/api/search/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
         signal: controller.signal
       });
       
-      if (!res.ok) throw new Error("Failed to fetch data from backend");
+      if (!res.ok) throw new Error("Failed to connect to streaming API");
       
-      const json = await res.json();
-      if (abortControllerRef.current !== controller) return;
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("ReadableStream not supported by browser");
 
-      if (json.status === "success") {
-        setData(json.results.points || []);
-        setSummaries(json.results.summaries || {});
-        setNdsScores(json.results.nds_scores || {});
-        setIsLocalSummary(json.results.is_local_summary || false);
-        setIsOfflineCache(json.results.is_offline_cache || false);
-      } else {
-        throw new Error(json.detail || "Unknown error");
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split("\n\n");
+        buffer = events.pop() || ""; // Keep the last partial event in the buffer
+
+        for (const event of events) {
+          if (!event.trim()) continue;
+          if (event.startsWith("data: ")) {
+            try {
+              const payload = JSON.parse(event.slice(6));
+              if (payload.event === "stage") {
+                setStreamStage(payload.data.stage);
+                setStreamProgress(payload.data.progress);
+              } else if (payload.event === "result") {
+                const results = payload.data;
+                setData(results.points || []);
+                setSummaries(results.summaries || {});
+                setNdsScores(results.nds_scores || {});
+                setIsLocalSummary(results.is_local_summary || false);
+                setIsOfflineCache(results.is_offline_cache || false);
+              } else if (payload.event === "error") {
+                throw new Error(payload.data);
+              }
+            } catch (jsonErr) {
+              console.error("Failed to parse SSE event:", jsonErr);
+            }
+          }
+        }
       }
+
+      if (abortControllerRef.current !== controller) return;
     } catch (err: any) {
       if (err.name === "AbortError") return;
       setError(err.message);
@@ -313,8 +346,12 @@ function ClusterContent() {
         
         <div className="flex-grow bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden relative min-h-[55vh]">
           {loading && (
-            <div className="absolute inset-0 z-20 bg-neutral-950/90 backdrop-blur-sm flex items-center justify-center">
-              <ClusterLoadingBar />
+            <div className="absolute inset-0 bg-neutral-950/80 backdrop-blur-sm z-40 flex items-center justify-center">
+              <ClusterLoadingBar 
+                isStreaming={true} 
+                currentStage={streamStage} 
+                progress={streamProgress} 
+              />
             </div>
           )}
           

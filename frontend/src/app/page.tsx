@@ -5,7 +5,13 @@ import { useRouter } from "next/navigation";
 import { Search, Loader2, BarChart2, Compass, Layers, Database, WifiOff, Globe, Link as LinkIcon } from "lucide-react";
 import DailyGradient from "@/components/DailyGradient";
 import GlobalMaxima from "@/components/GlobalMaxima";
+import SystemSplash from "@/components/SystemSplash";
 import SystemBoot from "@/components/SystemBoot";
+
+// Set this to false to use the Terminal/Cyberpunk style bootup (SystemBoot)
+// ***************************
+const USE_MINIMAL_BOOT = false; 
+// ***************************
 
 type ArticleSentiment = {
   label: string;
@@ -249,14 +255,18 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-neutral-950 flex flex-col items-center py-20 px-4 relative overflow-hidden">
-      {showBoot && !backendReady && (
-        <SystemBoot onReady={() => {
-          setBackendReady(true);
-          setShowBoot(false);
-        }} />
-      )}
-      {showBoot && backendReady && (
-        <SystemBoot onReady={() => setShowBoot(false)} />
+      {showBoot && (
+        USE_MINIMAL_BOOT ? (
+          <SystemSplash onReady={() => {
+            if (!backendReady) setBackendReady(true);
+            setShowBoot(false);
+          }} />
+        ) : (
+          <SystemBoot onReady={() => {
+            if (!backendReady) setBackendReady(true);
+            setShowBoot(false);
+          }} />
+        )
       )}
       <BackgroundBlobs />
 
