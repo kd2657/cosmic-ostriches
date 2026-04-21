@@ -398,7 +398,7 @@ export default function Home() {
       
       {activeTab === "global" && (
          <div className="w-full mt-12 mb-20 animate-in fade-in duration-500">
-            <GlobalMaxima query={searchedQuery} localMode={localMode} />
+            <GlobalMaxima key={searchedQuery} query={searchedQuery} localMode={localMode} />
          </div>
       )}
     </div>

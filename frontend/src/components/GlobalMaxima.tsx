@@ -1,11 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, memo } from "react";
 import dynamic from "next/dynamic";
 import { Loader2, X } from "lucide-react";
 
 // Plotly must be loaded dynamically because it requires the window object
-const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
+const Plot = dynamic(
+  () => import("react-plotly.js").then((mod) => mod),
+  { ssr: false }
+) as any;
 
 type TopArticle = {
   title: string;
@@ -32,11 +35,164 @@ type GlobalMaximaProps = {
   localMode: boolean;
 };
 
+// ── Plotly error handler ───────────────────────────────────────────────────
+// Plotly.js has an internal race condition where `updateFx` accesses
+// `gd._fullLayout._scrollZoom` before `_fullLayout` is initialized when
+// multiple Plotly.react() calls overlap in the async Promise chain.
+// react-plotly.js exposes an `onError` prop that catches these Promise
+// rejections gracefully. We also suppress the error globally as a safety net.
+function handlePlotlyError(err: any) {
+  // Silently swallow the known _scrollZoom initialization race
+  if (err?.message?.includes('_scrollZoom')) return;
+  // Log unexpected errors for debugging
+  console.warn('[Plotly]', err);
+}
+
+// ── Isolated Plotly sub-components ──────────────────────────────────────────
+// Key design: we pass `countries` (a stable object reference from React state)
+// rather than derived arrays. React.memo's shallow comparison sees the same
+// object reference across re-renders caused by selectedCountry changes,
+// so the sub-component skips re-rendering entirely. This prevents
+// react-plotly.js's componentDidUpdate from calling Plotly.react() again.
+
+type MapPlotProps = {
+  countries: Record<string, CountryStat>;
+  onBubbleClick: (countryName: string) => void;
+};
+
+const MapPlot = memo(function MapPlot({ countries, onBubbleClick }: MapPlotProps) {
+  // Derive all arrays inside the memo boundary — these inline objects
+  // are only created when the component actually renders (i.e. when
+  // `countries` reference changes), not on every parent re-render.
+  const locations = Object.keys(countries);
+  const counts = locations.map(c => countries[c].count);
+  const sentiments = locations.map(c => countries[c].mean_sentiment);
+  const maxVolume = Math.max(...counts);
+  const markerSizes = counts.map(count => Math.max(8, (count / maxVolume) * 40));
+  const hoverTexts = locations.map(c =>
+    `<b>${c}</b><br>Volume: ${countries[c].count}<br>Divergence (vs World): ${countries[c].divergence.toFixed(3)}<br><i style="font-size: 10px;">Click to view ${countries[c].count} articles</i>`
+  );
+
+  return (
+    <Plot
+      data={[{
+        type: 'scattergeo',
+        locationmode: 'country names',
+        locations,
+        text: hoverTexts,
+        hoverinfo: 'text',
+        marker: {
+          size: markerSizes,
+          color: sentiments,
+          colorscale: [[0, 'rgb(220,38,38)'], [0.5, 'rgb(115,115,115)'], [1, 'rgb(22,163,74)']],
+          cmin: -1,
+          cmax: 1,
+          line: { color: 'rgb(30,30,30)', width: 1.5 },
+          opacity: 0.85
+        }
+      }]}
+      layout={{
+        geo: {
+          showframe: false,
+          showcoastlines: true,
+          coastlinecolor: 'rgba(255,255,255,0.1)',
+          projection: { type: 'equirectangular' },
+          bgcolor: 'rgba(0,0,0,0)',
+          showland: true,
+          landcolor: 'rgba(30,30,30,0.8)',
+          showocean: true,
+          oceancolor: 'rgba(10,10,15,1)',
+          showcountries: true,
+          countrycolor: 'rgba(255,255,255,0.05)',
+        },
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        margin: { t: 0, b: 0, l: 0, r: 0 },
+        hoverlabel: { bgcolor: '#171717', bordercolor: '#333', font: { color: 'white' } },
+        autosize: true
+      }}
+      config={{ responsive: true, displayModeBar: false, scrollZoom: false }}
+      style={{ width: "100%", height: "100%" }}
+      onError={handlePlotlyError}
+      onClick={(e: any) => {
+        if (e.points && e.points[0]) {
+          const point = e.points[0] as any;
+          const cname = point.location;
+          if (cname) onBubbleClick(String(cname));
+        }
+      }}
+    />
+  );
+});
+
+type HeatmapPlotProps = {
+  pairwiseMatrix: number[][];
+  topCountries: string[];
+};
+
+const HeatmapPlot = memo(function HeatmapPlot({
+  pairwiseMatrix,
+  topCountries,
+}: HeatmapPlotProps) {
+  const heatmapZ = [...pairwiseMatrix].reverse();
+  const heatmapY = [...topCountries].reverse();
+
+  return (
+    <Plot
+      data={[{
+        z: heatmapZ,
+        x: topCountries,
+        y: heatmapY,
+        type: 'heatmap',
+        colorscale: 'Plasma',
+        text: heatmapZ,
+        texttemplate: '%{text:.2f}',
+        textfont: { color: 'white', size: 10 },
+        hoverongaps: false,
+        hovertemplate: '<b>%{y} - %{x}</b><br>Distance: %{z:.3f}<extra></extra>'
+      }]}
+      layout={{
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        margin: { t: 0, b: 120, l: 120, r: 0 },
+        xaxis: { tickangle: -45, color: 'white', tickfont: { size: 12 } },
+        yaxis: { color: 'white', tickfont: { size: 12 }, tickpad: 8 },
+        autosize: true
+      }}
+      config={{ responsive: true, displayModeBar: false, scrollZoom: false }}
+      style={{ width: "100%", height: "100%" }}
+      onError={handlePlotlyError}
+    />
+  );
+});
+
+// ── Main Component ─────────────────────────────────────────────────────────
+
 export default function GlobalMaxima({ query, localMode }: GlobalMaximaProps) {
   const [data, setData] = useState<GlobalAnalysisResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
+
+  // Suppress the Plotly _scrollZoom unhandled rejection globally.
+  // This catches the edge case where the error escapes react-plotly.js's
+  // own Promise .catch() — e.g. during React Strict Mode double-renders
+  // or Fast Refresh in development.
+  useEffect(() => {
+    const handler = (event: PromiseRejectionEvent) => {
+      if (
+        event.reason instanceof TypeError &&
+        event.reason.message?.includes('_scrollZoom')
+      ) {
+        event.preventDefault(); // Suppress — this is a benign Plotly race
+      }
+    };
+    window.addEventListener('unhandledrejection', handler);
+    return () => window.removeEventListener('unhandledrejection', handler);
+  }, []);
+
+  // Note: selectedCountry resets naturally because the parent keys this
+  // component on `searchedQuery`, causing a full remount per new search.
 
   useEffect(() => {
     if (!query) return;
@@ -44,6 +200,7 @@ export default function GlobalMaxima({ query, localMode }: GlobalMaximaProps) {
     const fetchAnalysis = async () => {
       setLoading(true);
       setError(null);
+      setData(null);
       try {
         const res = await fetch("http://localhost:8000/api/global-analysis", {
           method: "POST",
@@ -97,30 +254,10 @@ export default function GlobalMaxima({ query, localMode }: GlobalMaximaProps) {
 
   const { countries, top_countries, pairwise_matrix } = data;
   
-  // Prepare data for the Scattergeo Map
+  // These are used only for the non-Plotly UI below (bar chart, outlier list)
   const mapLocations = Object.keys(countries);
   const mapCounts = mapLocations.map(c => countries[c].count);
-  const mapSentiments = mapLocations.map(c => countries[c].mean_sentiment); // range [-1, 1]
-  const mapDivergences = mapLocations.map(c => countries[c].divergence);
-  
-  // Hover text formulation
-  const mapHoverTexts = mapLocations.map((c, i) => 
-    `<b>${c}</b><br>Volume: ${countries[c].count}<br>Divergence (vs World): ${countries[c].divergence.toFixed(3)}<br><i style="font-size: 10px;">Click to view ${countries[c].count} articles</i>`
-  );
-
-  // Normalize bubble sizes
   const maxVolume = Math.max(...mapCounts);
-  const mapMarkerSizes = mapCounts.map(count => Math.max(8, (count / maxVolume) * 40));
-
-  // Top list for Bar Chart
-  const barCountries = [...top_countries].reverse();
-  const barVolumes = barCountries.map(c => countries[c].count);
-  
-  // Matrix formulation
-  // To orient the heatmap properly: Reverse Y and Keep X to match typical correlation matricies
-  const heatmapZ = [...pairwise_matrix].reverse(); // Reverse outer array
-  const heatmapY = [...top_countries].reverse();   // Reverse y labels to align
-  const heatmapX = top_countries;
 
   return (
     <div className="w-full max-w-6xl mx-auto flex flex-col gap-8 animate-in fade-in duration-700">
@@ -135,54 +272,9 @@ export default function GlobalMaxima({ query, localMode }: GlobalMaximaProps) {
          </div>
          
          <div className="w-full h-[60vh] min-h-[400px]">
-            <Plot
-              key={`map-${top_countries.length}`}
-              data={[{
-                type: 'scattergeo',
-                locationmode: 'country names',
-                locations: mapLocations,
-                text: mapHoverTexts,
-                hoverinfo: 'text',
-                marker: {
-                  size: mapMarkerSizes,
-                  color: mapSentiments,
-                  colorscale: [[0, 'rgb(220,38,38)'], [0.5, 'rgb(115,115,115)'], [1, 'rgb(22,163,74)']],
-                  cmin: -1,
-                  cmax: 1,
-                  line: { color: 'rgb(30,30,30)', width: 1.5 },
-                  opacity: 0.85
-                }
-              }]}
-              layout={{
-                geo: {
-                  showframe: false,
-                  showcoastlines: true,
-                  coastlinecolor: 'rgba(255,255,255,0.1)',
-                  projection: { type: 'equirectangular' },
-                  bgcolor: 'rgba(0,0,0,0)',
-                  showland: true,
-                  landcolor: 'rgba(30,30,30,0.8)',
-                  showocean: true,
-                  oceancolor: 'rgba(10,10,15,1)',
-                  showcountries: true,
-                  countrycolor: 'rgba(255,255,255,0.05)',
-                },
-                paper_bgcolor: 'rgba(0,0,0,0)',
-                plot_bgcolor: 'rgba(0,0,0,0)',
-                margin: { t: 0, b: 0, l: 0, r: 0 },
-                hoverlabel: { bgcolor: '#171717', bordercolor: '#333', font: { color: 'white' } },
-                autosize: true
-              }}
-              config={{ responsive: true, displayModeBar: false, scrollZoom: false }}
-              style={{ width: "100%", height: "100%" }}
-              onClick={(e) => {
-                 // Open modal
-                 if (e.points && e.points[0]) {
-                    const point = e.points[0] as any;
-                    const cname = point.location;
-                    if (cname) setSelectedCountry(String(cname));
-                 }
-              }}
+            <MapPlot
+              countries={countries}
+              onBubbleClick={setSelectedCountry}
             />
          </div>
       </div>
@@ -255,33 +347,9 @@ export default function GlobalMaxima({ query, localMode }: GlobalMaximaProps) {
                A Euclidean distance heatmap showing sematic differences between the top {top_countries.length} reporting countries. Higher values (warmer colors, typically &gt;0.8) indicate fundamentally conflicting topical narratives.
              </p>
              <div className="w-full h-[600px] flex items-center justify-center">
-                 <Plot
-                    key={`heatmap-${top_countries.length}`}
-                    data={[{
-                      z: heatmapZ,
-                      x: heatmapX,
-                      y: heatmapY,
-                      type: 'heatmap',
-                      colorscale: 'Plasma',
-                      // @ts-ignore
-                      text: heatmapZ,
-                      // @ts-ignore
-                      texttemplate: '%{text:.2f}',
-                      // @ts-ignore
-                      textfont: { color: 'white', size: 10 },
-                      hoverongaps: false,
-                      hovertemplate: '<b>%{y} - %{x}</b><br>Distance: %{z:.3f}<extra></extra>'
-                    }]}
-                    layout={{
-                      paper_bgcolor: 'rgba(0,0,0,0)',
-                      plot_bgcolor: 'rgba(0,0,0,0)',
-                      margin: { t: 0, b: 120, l: 120, r: 0 },
-                      xaxis: { tickangle: -45, color: 'white', tickfont: { size: 12 } },
-                      yaxis: { color: 'white', tickfont: { size: 12 }, tickpad: 8 },
-                      autosize: true
-                    }}
-                    config={{ responsive: true, displayModeBar: false, scrollZoom: false }}
-                    style={{ width: "100%", height: "100%" }}
+                 <HeatmapPlot
+                    pairwiseMatrix={pairwise_matrix}
+                    topCountries={top_countries}
                  />
              </div>
          </div>
