@@ -10,6 +10,7 @@ type ArticleSentiment = {
   label: string;
   sentiment: string;
   confidence: number;
+  polarity?: number;
   scores: Record<string, number>;
 };
 
@@ -23,6 +24,16 @@ type Article = {
   match_score: number;
   sentiment?: ArticleSentiment | null;
 };
+
+const sentimentBadgeStyles: Record<string, string> = {
+  positive: "bg-emerald-950/70 text-emerald-300 border-emerald-800",
+  slightly_positive: "bg-lime-950/70 text-lime-300 border-lime-800",
+  slightly_negative: "bg-rose-950/70 text-rose-300 border-rose-800",
+  negative: "bg-red-950/70 text-red-300 border-red-800",
+};
+
+const getSentimentBadgeStyle = (sentiment: string) =>
+  sentimentBadgeStyles[sentiment] ?? "bg-neutral-900/70 text-neutral-300 border-neutral-700";
 
 function BackgroundBlobs() {
   const blobRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -389,11 +400,7 @@ export default function Home() {
                 {a.sentiment && (
                   <div className="mt-4 pt-3 border-t border-neutral-800 flex items-center justify-between gap-3">
                     <span
-                      className={`text-xs font-bold px-2.5 py-1 rounded-full border ${
-                        a.sentiment.sentiment === "positive"
-                          ? "bg-emerald-950/70 text-emerald-300 border-emerald-800"
-                          : "bg-red-950/70 text-red-300 border-red-800"
-                      }`}
+                      className={`text-xs font-bold px-2.5 py-1 rounded-full border ${getSentimentBadgeStyle(a.sentiment.sentiment)}`}
                     >
                       {a.sentiment.label}
                     </span>

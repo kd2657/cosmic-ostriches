@@ -4,6 +4,35 @@ import { useEffect, useState } from "react";
 import { useRouter, useSearchParams, useParams } from "next/navigation";
 import { ArrowLeft, ExternalLink, Loader2 } from "lucide-react";
 
+const sentimentBadgeStyles: Record<string, string> = {
+  positive: "bg-emerald-950/70 text-emerald-300 border-emerald-800",
+  slightly_positive: "bg-lime-950/70 text-lime-300 border-lime-800",
+  slightly_negative: "bg-rose-950/70 text-rose-300 border-rose-800",
+  negative: "bg-red-950/70 text-red-300 border-red-800",
+};
+
+const getSentimentBadgeStyle = (sentiment: string) =>
+  sentimentBadgeStyles[sentiment] ?? "bg-neutral-900/70 text-neutral-300 border-neutral-700";
+
+type ArticleSentiment = {
+  label: string;
+  sentiment: string;
+  confidence: number;
+  polarity?: number;
+  scores: Record<string, number>;
+};
+
+type Article = {
+  id: string;
+  title?: string;
+  description?: string;
+  url?: string;
+  source?: string;
+  body?: string;
+  publish_date?: string;
+  sentiment?: ArticleSentiment | null;
+};
+
 const formatTextIntoParagraphs = (text: string) => {
   if (!text) return ["Content unavailable."];
   
@@ -31,7 +60,7 @@ export default function ArticlePage() {
   const searchParams = useSearchParams();
   const params = useParams();
   
-  const [article, setArticle] = useState<any>(null);
+  const [article, setArticle] = useState<Article | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -48,8 +77,8 @@ export default function ArticlePage() {
         } else {
           throw new Error("Article not found in database");
         }
-      } catch (err: any) {
-        setError(err.message);
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : "Failed to load article");
       } finally {
         setLoading(false);
       }
@@ -97,6 +126,11 @@ export default function ArticlePage() {
               <span className="text-sm font-mono text-neutral-500">
                 {article.publish_date ? new Date(article.publish_date).toLocaleDateString() : ""}
               </span>
+              {article.sentiment && (
+                <span className={`text-xs font-bold px-3 py-1 rounded-full border ${getSentimentBadgeStyle(article.sentiment.sentiment)}`}>
+                  {article.sentiment.label}
+                </span>
+              )}
             </div>
             
             <h1 className="text-3xl md:text-4xl font-bold leading-tight mb-8 text-neutral-100">
