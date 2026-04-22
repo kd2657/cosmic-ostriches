@@ -130,7 +130,8 @@ def run_search_pipeline(req: SearchRequest):
         if not articles:
             return {"status": "success", "results": [], "is_offline_cache": is_offline_cache}
             
-        # Step 2: Cluster & Reduce Dimensionality
+        # Step 2: Sentiment, Cluster & Reduce Dimensionality
+        articles = attach_article_sentiment(articles)
         results = process_batch_cluster(
             articles, 
             method=req.algorithm, 
