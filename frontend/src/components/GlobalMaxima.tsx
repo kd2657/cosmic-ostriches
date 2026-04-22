@@ -13,12 +13,20 @@ type TopArticle = {
   url: string;
 };
 
+type ArticleSentiment = {
+  label: string;
+  sentiment: string;
+  confidence: number;
+  polarity?: number;
+  scores: Record<string, number>;
+};
+
 type CountryStat = {
   count: number;
   divergence: number;
   mean_sentiment: number;
   top_article: TopArticle;
-  articles: Array<TopArticle & { publish_date?: string }>;
+  articles: Array<TopArticle & { publish_date?: string; sentiment?: ArticleSentiment | null }>;
 };
 
 type GlobalAnalysisResponse = {
@@ -37,6 +45,16 @@ function handlePlotlyError(err: any) {
   if (err?.message?.includes('_scrollZoom')) return;
   console.warn('[Plotly]', err);
 }
+
+const sentimentBadgeStyles: Record<string, string> = {
+  positive: "bg-emerald-950/70 text-emerald-300 border-emerald-800",
+  slightly_positive: "bg-lime-950/70 text-lime-300 border-lime-800",
+  slightly_negative: "bg-rose-950/70 text-rose-300 border-rose-800",
+  negative: "bg-red-950/70 text-red-300 border-red-800",
+};
+
+const getSentimentBadgeStyle = (sentiment: string) =>
+  sentimentBadgeStyles[sentiment] ?? "bg-neutral-900/70 text-neutral-300 border-neutral-700";
 
 export default function GlobalMaxima({ query, localMode }: GlobalMaximaProps) {
   // 1. ALL HOOKS MUST BE AT THE TOP (Before any early returns)
@@ -108,7 +126,7 @@ export default function GlobalMaxima({ query, localMode }: GlobalMaximaProps) {
       marker: {
         size: markerSizes,
         color: sentiments,
-        colorscale: [[0, 'rgb(220,38,38)'], [0.5, 'rgb(115,115,115)'], [1, 'rgb(22,163,74)']],
+        colorscale: [[0, 'rgb(220,38,38)'], [0.375, 'rgb(251,113,133)'], [0.5, 'rgb(115,115,115)'], [0.625, 'rgb(163,230,53)'], [1, 'rgb(22,163,74)']],
         cmin: -1,
         cmax: 1,
         line: { color: 'rgb(30,30,30)', width: 1.5 },
@@ -229,7 +247,7 @@ export default function GlobalMaxima({ query, localMode }: GlobalMaximaProps) {
         <div className="px-6 mb-2 z-10 w-full">
           <h2 className="text-2xl font-bold text-white tracking-tight">Geopolitical Consensus Tracker</h2>
           <p className="text-neutral-400 text-sm mt-1 max-w-full">
-            Bubble size represents how many articles a country published. Color indicates the overall tone of those stories (Green = Positive, Red = Negative).
+            Bubble size represents how many articles a country published. Color indicates the overall tone of those stories from red to green.
           </p>
         </div>
         
@@ -343,9 +361,16 @@ export default function GlobalMaxima({ query, localMode }: GlobalMaximaProps) {
                 <div key={i} className="p-4 rounded-xl bg-neutral-800/40 border border-neutral-800/80 hover:bg-neutral-800/60 transition group relative">
                   <a href={art.url} target="_blank" rel="noopener noreferrer" className="absolute inset-0 z-10" aria-label="Read article" />
                   <h4 className="text-lg font-semibold text-white leading-tight mb-2 group-hover:text-blue-400 transition-colors">{art.title}</h4>
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-3">
                     <span className="text-xs uppercase font-bold text-blue-500 bg-blue-500/10 px-2 py-1 rounded-sm">{art.source}</span>
-                    {art.publish_date && <span className="text-xs text-neutral-500">{new Date(art.publish_date).toLocaleDateString()}</span>}
+                    <div className="flex items-center gap-2">
+                      {art.sentiment && (
+                        <span className={`text-[10px] font-bold px-2 py-1 rounded-full border ${getSentimentBadgeStyle(art.sentiment.sentiment)}`}>
+                          {art.sentiment.label}
+                        </span>
+                      )}
+                      {art.publish_date && <span className="text-xs text-neutral-500">{new Date(art.publish_date).toLocaleDateString()}</span>}
+                    </div>
                   </div>
                 </div>
               ))}
