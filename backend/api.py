@@ -2,46 +2,32 @@ import os
 import requests
 from typing import List, Dict, Any
 from functools import lru_cache
+from dotenv import load_dotenv
+
+# Force load .env because terminal injection is disabled
+load_dotenv()
 
 NEWS_API_AI_KEY = os.environ.get("NEWSAPI_AI_KEY", "")
 NEWS_API_AI_URL = "https://newsapi.ai/api/v1/article/getArticles"
 
+# Support for the user's existing NewsAPI.org key
+NEWS_API_ORG_KEY = os.environ.get("NEWSAPI_KEY", "")
+NEWS_API_ORG_URL = "https://newsapi.org/v2/everything"
+NEWS_API_ORG_TOP_URL = "https://newsapi.org/v2/top-headlines"
+
 @lru_cache(maxsize=32)
 def fetch_news(query: str, page_size: int = 50) -> List[Dict[str, Any]]:
     """
-    Fetches FULL BODY news articles from NewsAPI.ai (Event Registry) based on a query.
-    If the API keys are not supplied or the request fails, it will attempt
-    to gracefully fall back or raise an exception to the frontend.
+    Fetches news. Defaults to NewsAPI.ai, falls back to NewsAPI.org.
     """
-    if not NEWS_API_AI_KEY:
-        raise ValueError("NEWSAPI_AI_KEY environment variable is not set. Please obtain a free developer key from newsapi.ai.")
+    if NEWS_API_AI_KEY and not NEWS_API_AI_KEY.startswith("your_"):
+        return _fetch_from_newsapi_ai(query, page_size)
+    elif NEWS_API_ORG_KEY:
+        return _fetch_from_newsapi_org(query, page_size)
+    else:
+        raise ValueError("No valid API Key found in .env. Please set NEWSAPI_AI_KEY or NEWSAPI_KEY.")
 
-    payload = {
-        "action": "getArticles",
-        "keyword": query,
-        "lang": "eng",
-        "articlesPage": 1,
-        "articlesCount": min(page_size, 100),
-        "articlesSortBy": "rel",
-        "resultType": "articles",
-        "includeArticleCategories": True,
-        "includeArticleLocation": True,
-        "includeSourceLocation": True,
-        "apiKey": NEWS_API_AI_KEY,
-        "articleBodyLen": -1
-    }
-
-    response = requests.post(NEWS_API_AI_URL, json=payload)
-    
-    if response.status_code != 200:
-        error_msg = response.json().get("error", "Unknown error from NewsAPI.ai")
-        raise Exception(f"NewsAPI.ai Error ({response.status_code}): {error_msg}")
-
-    data = response.json()
-    # Event Registry nests results in data['articles']['results']
-    articles = data.get("articles", {}).get("results", [])
-    
-    cleaned_articles = []
+def _fetch_from_newsapi_ai(query: str, page_size: int = 50) -> List[Dict[str, Any]]:
     
     for idx, article in enumerate(articles):
         title = article.get("title") or ""
@@ -96,14 +82,27 @@ def fetch_news(query: str, page_size: int = 50) -> List[Dict[str, Any]]:
             
     return cleaned_articles
 
+def _fetch_from_newsapi_org(query: str, page_size: int = 50) -> List[Dict[str, Any]]:
+    params = {"q": query, "apiKey": NEWS_API_ORG_KEY, "pageSize": min(page_size, 100), "language": "en"}
+    res = requests.get(NEWS_API_ORG_URL, params=params)
+    if res.status_code != 200: raise Exception(f"NewsAPI.org Error: {res.text}")
+    articles = res.json().get("articles", [])
+    return [{
+        "id": a.get("url"), "title": a.get("title"), "body": a.get("description"),
+        "category": "General", "url": a.get("url"), "source": a.get("source", {}).get("name"),
+        "country": None, "publish_date": a.get("publishedAt"), "embed_text": f"{a.get('title')}. {a.get('description')}"
+    } for a in articles]
+
 @lru_cache(maxsize=32)
 def fetch_daily_gradient(page_size: int = 100) -> List[Dict[str, Any]]:
-    """
-    Fetches the latest top headlines for the daily gradient via NewsAPI.ai.
-    """
-    if not NEWS_API_AI_KEY:
-        raise ValueError("NEWSAPI_AI_KEY environment variable is not set.")
+    if NEWS_API_AI_KEY and not NEWS_API_AI_KEY.startswith("your_"):
+        return _fetch_daily_gradient_ai(page_size)
+    elif NEWS_API_ORG_KEY:
+        return _fetch_daily_gradient_org(page_size)
+    else:
+        raise ValueError("No API Key found.")
 
+def _fetch_daily_gradient_ai(page_size: int = 100) -> List[Dict[str, Any]]:
     payload = {
         "action": "getArticles",
         "lang": "eng",
@@ -166,15 +165,20 @@ def fetch_daily_gradient(page_size: int = 100) -> List[Dict[str, Any]]:
                         country = lbl
             
             cleaned_articles.append({
-                "id": uid,
-                "title": title,
-                "body": body,
-                "category": category,
-                "url": article.get("url"),
-                "source": source,
-                "country": country,
-                "publish_date": article.get("dateTimePub", ""),
+                "id": uid, "title": title, "body": body, "category": category, "url": article.get("url"),
+                "source": source, "country": country, "publish_date": article.get("dateTimePub", ""),
                 "embed_text": f"{title}. {body}"
             })
             
     return cleaned_articles
+
+def _fetch_daily_gradient_org(page_size: int = 100) -> List[Dict[str, Any]]:
+    params = {"apiKey": NEWS_API_ORG_KEY, "pageSize": min(page_size, 100), "language": "en", "category": "general"}
+    res = requests.get(NEWS_API_ORG_URL.replace("everything", "top-headlines"), params=params)
+    if res.status_code != 200: return []
+    articles = res.json().get("articles", [])
+    return [{
+        "id": a.get("url"), "title": a.get("title"), "body": a.get("description"),
+        "category": "General", "url": a.get("url"), "source": a.get("source", {}).get("name"),
+        "country": None, "publish_date": a.get("publishedAt"), "embed_text": f"{a.get('title')}. {a.get('description')}"
+    } for a in articles]

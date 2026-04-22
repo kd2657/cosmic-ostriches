@@ -523,6 +523,65 @@ function ClusterContent() {
             </div>
           </div>
         )}
+
+        {/* Article Detail Modal */}
+        {selectedArticle && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 md:p-12 animate-in fade-in duration-200">
+            <div className="absolute inset-0 bg-black/90 backdrop-blur-md cursor-pointer" onClick={() => setSelectedArticle(null)} />
+            <div className="relative w-full max-w-3xl bg-neutral-900 border border-neutral-800 rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-4 duration-300">
+              {/* Header */}
+              <div className="p-6 border-b border-neutral-800 flex items-center justify-between bg-neutral-900/80 backdrop-blur-md sticky top-0 z-10">
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded">
+                      {selectedArticle.source || "Unknown Source"}
+                    </span>
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-500">
+                      {selectedArticle.publish_date ? new Date(selectedArticle.publish_date).toLocaleDateString() : "No Date"}
+                    </span>
+                  </div>
+                  <h2 className="text-xl font-bold text-white leading-tight mt-1">{selectedArticle.title}</h2>
+                </div>
+                <button 
+                  onClick={() => setSelectedArticle(null)}
+                  className="p-2 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded-full transition-colors flex-shrink-0 ml-4"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="p-8 md:p-10 overflow-y-auto max-h-[70vh] styled-scrollbar bg-neutral-950/20">
+                <div className="prose prose-invert max-w-none">
+                  {formatTextIntoParagraphs(selectedArticle.body || selectedArticle.description).map((para, i) => (
+                    <p key={i} className="text-neutral-300 text-lg leading-relaxed mb-6 font-medium">
+                      {para}
+                    </p>
+                  ))}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="p-6 border-t border-neutral-800 bg-neutral-900/80 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] text-neutral-500 uppercase font-bold">Narrative Affinity</span>
+                    <span className="text-sm font-bold text-white">Cluster {selectedArticle.cluster + 1}</span>
+                  </div>
+                </div>
+                
+                <a 
+                  href={selectedArticle.url} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold transition-all hover:scale-[1.02] shadow-lg shadow-blue-600/20 active:scale-95"
+                >
+                  Read Source <ExternalLink className="w-4 h-4" />
+                </a>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );
