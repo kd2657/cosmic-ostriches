@@ -7,6 +7,7 @@ import DailyGradient from "@/components/DailyGradient";
 import GlobalMaxima from "@/components/GlobalMaxima";
 import SystemSplash from "@/components/SystemSplash";
 import SystemBoot from "@/components/SystemBoot";
+import Tooltip from "@/components/Tooltip";
 
 // Set this to false to use the Terminal/Cyberpunk style bootup (SystemBoot)
 // ***************************
@@ -282,22 +283,30 @@ export default function Home() {
       <BackgroundBlobs />
 
       <div className="absolute top-4 right-4 z-50 animate-in fade-in slide-in-from-top-4 duration-500">
-         <button 
-            onClick={() => setLocalMode(!localMode)}
-            title="Local Mode disables the NewsAPI text fetcher entirely and routes search/exploration explicitly through the local ChromeDB vector embeddings."
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-[10px] sm:text-xs font-medium transition-all shadow-md backdrop-blur-md ${localMode ? 'bg-amber-500/10 text-amber-500 border-amber-500/40 shadow-[0_0_10px_rgba(245,158,11,0.2)]' : 'bg-neutral-900/30 text-neutral-500 border-neutral-800/50 hover:text-neutral-400'}`}
-         >
-            {localMode ? <WifiOff className="w-3 h-3" /> : <Database className="w-3 h-3" />}
-            {localMode ? "LOCAL MODE: ON" : "LOCAL MODE: OFF"}
-         </button>
+         <Tooltip content="Local Mode disables the NewsAPI text fetcher entirely and routes search/exploration explicitly through the local ChromeDB vector embeddings.">
+           <button 
+              onClick={() => setLocalMode(!localMode)}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-[10px] sm:text-xs font-medium transition-all shadow-md backdrop-blur-md ${localMode ? 'bg-amber-500/10 text-amber-500 border-amber-500/40 shadow-[0_0_10px_rgba(245,158,11,0.2)]' : 'bg-neutral-900/30 text-neutral-500 border-neutral-800/50 hover:text-neutral-400'}`}
+           >
+              {localMode ? <WifiOff className="w-3 h-3" /> : <Database className="w-3 h-3" />}
+              {localMode ? "LOCAL MODE: ON" : "LOCAL MODE: OFF"}
+           </button>
+         </Tooltip>
       </div>
 
       {isOfflineCache && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-top-4 fade-in duration-400">
-          <div className="bg-yellow-950 border border-yellow-700 text-yellow-500 px-4 py-2 rounded-full shadow-2xl text-sm flex items-center gap-3 whitespace-nowrap font-medium pointer-events-auto">
-            <span className="flex h-2 w-2 rounded-full bg-yellow-500 animate-pulse shrink-0 shadow-[0_0_8px_rgba(234,179,8,1)]"></span>
-            NewsAPI Limit Reached. Displaying locally cached vector-matches.
-          </div>
+          {localMode ? (
+            <div className="bg-blue-950 border border-blue-700 text-blue-400 px-4 py-2 rounded-full shadow-2xl text-sm flex items-center gap-3 whitespace-nowrap font-medium pointer-events-auto">
+              <Database className="w-4 h-4 shrink-0 shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
+              Local Mode Enabled. Displaying results from local database.
+            </div>
+          ) : (
+            <div className="bg-yellow-950 border border-yellow-700 text-yellow-500 px-4 py-2 rounded-full shadow-2xl text-sm flex items-center gap-3 whitespace-nowrap font-medium pointer-events-auto">
+              <span className="flex h-2 w-2 rounded-full bg-yellow-500 animate-pulse shrink-0 shadow-[0_0_8px_rgba(234,179,8,1)]"></span>
+              NewsAPI Limit Reached. Displaying locally cached vector-matches.
+            </div>
+          )}
         </div>
       )}
 
