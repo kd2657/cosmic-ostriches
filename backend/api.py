@@ -248,7 +248,7 @@ def fetch_news(query: str, page_size: int = 50):
         print(f"[FETCH] NewsAPI.ai failed: {e}")
 
 
-    # --- 3. RSS ---
+    # --- 2. RSS ---
     try:
         print("[FETCH] Falling back to RSS...")
         articles = fetch_rss_news(query, page_size)
@@ -257,7 +257,7 @@ def fetch_news(query: str, page_size: int = 50):
     except Exception as e:
         print(f"[FETCH] RSS failed: {e}")
 
-    # --- 4. Vector DB ---
+    # --- 3. Vector DB ---
     print("[FETCH] Falling back to vector DB...")
     articles = query_local_database(query, n_results=page_size)
 
