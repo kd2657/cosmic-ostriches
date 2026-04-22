@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import asdict, dataclass
 from threading import Lock
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
@@ -7,7 +8,11 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
 from transformers import pipeline
 from transformers.pipelines.base import Pipeline
 
-DEFAULT_SENTIMENT_MODEL = "distilbert-base-uncased-finetuned-sst-2-english"
+DEFAULT_SENTIMENT_MODEL = os.environ.get(
+    "SENTIMENT_MODEL",
+    "cardiffnlp/twitter-roberta-base-sentiment-latest",
+)
+STRONG_SENTIMENT_THRESHOLD = float(os.environ.get("SENTIMENT_STRONG_THRESHOLD", "0.25"))
 
 
 @dataclass(frozen=True)
@@ -16,6 +21,7 @@ class SentimentResult:
     label: str
     sentiment: str
     confidence: float
+    polarity: float
     scores: Dict[str, float]
 
     def to_dict(self) -> Dict[str, Any]:
@@ -52,19 +58,34 @@ class SentimentClassifier:
         )
 
     def classify(self, text: str) -> SentimentResult:
-        prepared_text = self._prepare_text(text)
-        raw_result = self._run_pipeline([prepared_text])[0]
-        return self._build_result(prepared_text, raw_result)
+        return self.classify_batch([text])[0]
 
     def classify_batch(self, texts: Sequence[str]) -> List[SentimentResult]:
         prepared_texts = [self._prepare_text(text) for text in texts]
         if not prepared_texts:
             return []
 
-        raw_results = self._run_pipeline(prepared_texts)
+        chunk_texts: List[str] = []
+        chunk_indexes: List[int] = []
+        chunk_weights: List[float] = []
+
+        for index, text in enumerate(prepared_texts):
+            for chunk_index, chunk in enumerate(self._chunk_text(text)):
+                chunk_texts.append(chunk)
+                chunk_indexes.append(index)
+                chunk_weights.append(1.5 if chunk_index == 0 else 1.0)
+
+        raw_results = self._run_pipeline(chunk_texts)
+        scored_chunks: List[List[tuple[float, Dict[str, float]]]] = [
+            [] for _ in prepared_texts
+        ]
+
+        for doc_index, weight, raw_result in zip(chunk_indexes, chunk_weights, raw_results):
+            scored_chunks[doc_index].append((weight, self._scores_from_raw(raw_result)))
+
         return [
-            self._build_result(text, raw_result)
-            for text, raw_result in zip(prepared_texts, raw_results)
+            self._build_result(text, chunks)
+            for text, chunks in zip(prepared_texts, scored_chunks)
         ]
 
     def classify_many(
@@ -129,22 +150,22 @@ class SentimentClassifier:
     def _build_result(
         self,
         text: str,
-        raw_result: List[Dict[str, Union[str, float]]],
+        scored_chunks: List[tuple[float, Dict[str, float]]],
     ) -> SentimentResult:
-        if not raw_result:
+        if not scored_chunks:
             raise ValueError("Sentiment model returned no scores.")
 
-        scores = {
-            self._normalize_label(str(item["label"])): round(float(item["score"]), 6)
-            for item in raw_result
-        }
-        label, confidence = max(scores.items(), key=lambda item: item[1])
+        scores = self._weighted_average_scores(scored_chunks)
+        polarity = self._calculate_polarity(scores)
+        sentiment, label = self._bucket_sentiment(polarity)
+        confidence = max(scores.values())
 
         return SentimentResult(
             text=text,
-            label=label.upper(),
-            sentiment=label,
+            label=label,
+            sentiment=sentiment,
             confidence=round(confidence, 6),
+            polarity=round(polarity, 6),
             scores=scores,
         )
 
@@ -164,5 +185,82 @@ class SentimentClassifier:
 
         return normalized_text
 
+    def _chunk_text(self, text: str, words_per_chunk: int = 140, max_chunks: int = 6) -> List[str]:
+        words = text.split()
+        if len(words) <= words_per_chunk:
+            return [text]
+
+        chunks = [
+            " ".join(words[index:index + words_per_chunk])
+            for index in range(0, len(words), words_per_chunk)
+        ]
+        return chunks[:max_chunks]
+
+    def _scores_from_raw(
+        self,
+        raw_result: List[Dict[str, Union[str, float]]],
+    ) -> Dict[str, float]:
+        if not raw_result:
+            raise ValueError("Sentiment model returned no scores.")
+
+        return {
+            self._normalize_label(str(item["label"])): round(float(item["score"]), 6)
+            for item in raw_result
+        }
+
+    def _weighted_average_scores(
+        self,
+        scored_chunks: List[tuple[float, Dict[str, float]]],
+    ) -> Dict[str, float]:
+        labels = {
+            label
+            for _, scores in scored_chunks
+            for label in scores
+        }
+        total_weight = sum(weight for weight, _ in scored_chunks)
+
+        return {
+            label: round(
+                sum(weight * scores.get(label, 0.0) for weight, scores in scored_chunks) / total_weight,
+                6,
+            )
+            for label in labels
+        }
+
     def _normalize_label(self, label: str) -> str:
-        return label.strip().lower()
+        normalized = label.strip().lower().replace("-", "_")
+        label_aliases = {
+            "label_0": "negative",
+            "0": "negative",
+            "neg": "negative",
+            "neu": "neutral",
+            "label_2": "positive",
+            "2": "positive",
+            "pos": "positive",
+        }
+
+        if normalized in ("label_1", "1"):
+            if "cardiffnlp/twitter_roberta_base_sentiment" in self.model_name.replace("-", "_"):
+                return "neutral"
+            return "positive"
+
+        return label_aliases.get(normalized, normalized)
+
+    def _calculate_polarity(self, scores: Dict[str, float]) -> float:
+        positive_score = scores.get("positive", 0.0)
+        negative_score = scores.get("negative", 0.0)
+
+        if "positive" in scores or "negative" in scores:
+            return max(-1.0, min(1.0, positive_score - negative_score))
+
+        label, confidence = max(scores.items(), key=lambda item: item[1])
+        return -confidence if label == "negative" else confidence
+
+    def _bucket_sentiment(self, polarity: float) -> tuple[str, str]:
+        if polarity >= STRONG_SENTIMENT_THRESHOLD:
+            return "positive", "Positive"
+        if polarity >= 0:
+            return "slightly_positive", "Slightly Positive"
+        if polarity > -STRONG_SENTIMENT_THRESHOLD:
+            return "slightly_negative", "Slightly Negative"
+        return "negative", "Negative"

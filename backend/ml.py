@@ -38,6 +38,45 @@ collection = chroma_client.get_or_create_collection(name="news_diversity_v3_coll
 # can abort the process if multiple FastAPI threads enter it concurrently.
 _cluster_pipeline_lock = Lock()
 
+TONE_NEUTRAL_THRESHOLD = 0.10
+STABILITY_MIXED_THRESHOLD = 0.03
+STABILITY_POLARIZED_THRESHOLD = 0.15
+
+
+def _classify_cluster_tone(mean_polarity: float) -> str:
+    if mean_polarity > TONE_NEUTRAL_THRESHOLD:
+        return "Positive"
+    if mean_polarity < -TONE_NEUTRAL_THRESHOLD:
+        return "Negative"
+    return "Neutral"
+
+
+def _classify_cluster_stability(variance: float) -> str:
+    if variance < STABILITY_MIXED_THRESHOLD:
+        return "Stable"
+    if variance < STABILITY_POLARIZED_THRESHOLD:
+        return "Mixed"
+    return "Highly Polarized"
+
+
+def _compute_cluster_sentiment_stats(cluster_polarities: Dict[int, List[float]]) -> Dict[str, Dict[str, Any]]:
+    stats = {}
+    for cluster_id, polarities in cluster_polarities.items():
+        if cluster_id == -1 or not polarities:
+            continue
+
+        mean_polarity = float(np.mean(polarities))
+        variance = float(np.var(polarities))
+        stats[str(cluster_id)] = {
+            "tone": _classify_cluster_tone(mean_polarity),
+            "stability": _classify_cluster_stability(variance),
+            "mean_polarity": round(mean_polarity, 3),
+            "polarity_variance": round(variance, 3),
+            "article_count": len(polarities),
+        }
+
+    return stats
+
 def vectorize_and_store(articles: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Takes cleaned articles, checks if they exist in ChromaDB, 
@@ -275,9 +314,12 @@ def process_batch_cluster(
     from models.metrics import compute_article_distances_from_center
     article_distances = compute_article_distances_from_center(embeddings, np.array(labels))
 
+    sentiment_by_id = {a.get("id"): a.get("sentiment") for a in articles}
+
     # Build response points
     results = []
     cluster_texts = {}
+    cluster_polarities = {}
     
     # Hybrid Gemini / Local Auto-Summarization Key detection
     gemini_key = os.getenv("GEMINI_API_KEY")
@@ -293,9 +335,18 @@ def process_batch_cluster(
     for idx, article_id in enumerate(ids):
         meta = data["metadatas"][idx]
         cluster_id = int(labels[idx])
+        sentiment = sentiment_by_id.get(article_id)
         
         if cluster_id not in cluster_texts:
             cluster_texts[cluster_id] = []
+        if cluster_id not in cluster_polarities:
+            cluster_polarities[cluster_id] = []
+
+        if sentiment and sentiment.get("polarity") is not None:
+            try:
+                cluster_polarities[cluster_id].append(float(sentiment.get("polarity")))
+            except (TypeError, ValueError):
+                pass
             
         t = meta.get("title", "")
         b = meta.get("body", "")
@@ -315,6 +366,7 @@ def process_batch_cluster(
             "source": meta.get("source", ""),
             "body": meta.get("body", ""),
             "publish_date": meta.get("publish_date", ""),
+            "sentiment": sentiment,
             "cluster": cluster_id,
             "x": float(reduced_embeddings[idx][0]),
             "y": float(reduced_embeddings[idx][1]),
@@ -412,11 +464,13 @@ def process_batch_cluster(
             summaries[str(cid)] = generated
     from models.metrics import compute_narrative_diversity_score
     nds_scores = compute_narrative_diversity_score(embeddings, np.array(labels))
+    cluster_sentiment = _compute_cluster_sentiment_stats(cluster_polarities)
             
     return {
         "points": results, 
         "summaries": summaries,
         "nds_scores": nds_scores,
+        "cluster_sentiment": cluster_sentiment,
         "is_local_summary": used_local_fallback
     }
 

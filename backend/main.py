@@ -52,7 +52,8 @@ def attach_article_sentiment(articles):
     for index, article in enumerate(articles):
         title = (article.get("title") or "").strip()
         description = (article.get("description") or "").strip()
-        combined_text = " ".join(part for part in [title, description] if part).strip()
+        body = (article.get("body") or "").strip()
+        combined_text = " ".join(part for part in [title, description, body] if part).strip()
 
         if not combined_text:
             article["sentiment"] = None
@@ -129,7 +130,8 @@ def run_search_pipeline(req: SearchRequest):
         if not articles:
             return {"status": "success", "results": [], "is_offline_cache": is_offline_cache}
             
-        # Step 2: Cluster & Reduce Dimensionality
+        # Step 2: Sentiment, Cluster & Reduce Dimensionality
+        articles = attach_article_sentiment(articles)
         results = process_batch_cluster(
             articles, 
             method=req.algorithm, 
@@ -211,9 +213,11 @@ def run_global_analysis(req: SearchRequest):
             for art in data["articles"]:
                 if art.get("sentiment"):
                     s = art["sentiment"]
-                    val = s.get("confidence", 0.0)
-                    if s.get("sentiment", "positive").lower() == "negative":
-                        val = -val
+                    val = s.get("polarity")
+                    if val is None:
+                        val = s.get("confidence", 0.0)
+                        if s.get("sentiment", "positive").lower() in ("negative", "slightly_negative"):
+                            val = -val
                     scores.append(val)
             if scores:
                 data["mean_sentiment"] = sum(scores) / len(scores)
@@ -235,4 +239,5 @@ def fetch_single_article(article_id: str):
     data = get_article_by_id(article_id)
     if not data:
         raise HTTPException(status_code=404, detail="Article not found")
+    attach_article_sentiment([data])
     return {"status": "success", "article": data}

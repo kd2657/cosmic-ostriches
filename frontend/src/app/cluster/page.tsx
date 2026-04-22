@@ -31,6 +31,26 @@ const Plot = dynamic(() => import("react-plotly.js"), {
   ) 
 });
 
+type ClusterSentiment = {
+  tone: "Positive" | "Neutral" | "Negative" | string;
+  stability: "Stable" | "Mixed" | "Highly Polarized" | string;
+  mean_polarity: number;
+  polarity_variance: number;
+  article_count: number;
+};
+
+const toneBadgeStyles: Record<string, string> = {
+  Positive: "bg-green-950/30 text-green-400 border-green-900/30",
+  Neutral: "bg-blue-950/30 text-blue-300 border-blue-900/30",
+  Negative: "bg-red-950/30 text-red-400 border-red-900/30",
+};
+
+const stabilityBadgeStyles: Record<string, string> = {
+  Stable: "bg-emerald-950/30 text-emerald-400 border-emerald-900/30",
+  Mixed: "bg-yellow-950/30 text-yellow-500 border-yellow-900/30",
+  "Highly Polarized": "bg-fuchsia-950/30 text-fuchsia-300 border-fuchsia-900/30",
+};
+
 function computeConvexHull(points: {x: number, y: number}[]) {
   if (points.length <= 2) return points;
   const sorted = points.slice().sort((a, b) => a.x === b.x ? a.y - b.y : a.x - b.x);
@@ -63,13 +83,14 @@ function ClusterContent() {
   const [data, setData] = useState<any[]>([]);
   const [summaries, setSummaries] = useState<Record<string, {title: string, summary: string} | string>>({});
   const [ndsScores, setNdsScores] = useState<Record<string, number>>({});
+  const [clusterSentiment, setClusterSentiment] = useState<Record<string, ClusterSentiment>>({});
   const [selectedCluster, setSelectedCluster] = useState<number | null>(null);
   const [isLocalSummary, setIsLocalSummary] = useState(false);
   const [isOfflineCache, setIsOfflineCache] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedArticle, setSelectedArticle] = useState<any>(null);
-  const [selectedNarrative, setSelectedNarrative] = useState<{id: string, text: string, nds: number, sources: string[]} | null>(null);
+  const [selectedNarrative, setSelectedNarrative] = useState<{id: string, text: string, nds: number, sources: string[], sentiment?: ClusterSentiment} | null>(null);
   
   const [algorithm, setAlgorithm] = useState("hdbscan");
   const [kValue, setKValue] = useState<number | "">("");
@@ -116,6 +137,7 @@ function ClusterContent() {
         setData(json.results.points || []);
         setSummaries(json.results.summaries || {});
         setNdsScores(json.results.nds_scores || {});
+        setClusterSentiment(json.results.cluster_sentiment || {});
         setIsLocalSummary(json.results.is_local_summary || false);
         setIsOfflineCache(json.results.is_offline_cache || false);
       } else {
@@ -214,7 +236,7 @@ function ClusterContent() {
             dateStr = isNaN(dateObj.getTime()) ? d.publish_date.slice(0, 10) : dateObj.toLocaleDateString();
         }
         
-        let descHtml = d.description ? `<br><br><span style="color:#a3a3a3; font-size:11px;">${d.description.length > 150 ? d.description.substring(0, 150) + "..." : d.description}</span>` : "";
+        const descHtml = d.description ? `<br><br><span style="color:#a3a3a3; font-size:11px;">${d.description.length > 150 ? d.description.substring(0, 150) + "..." : d.description}</span>` : "";
         
         return `<b>${d.source}</b> <span style="color:#737373; font-size:10px; margin-left:8px;">${dateStr}</span><br><span style="font-size:13px; font-weight:500;">${d.title}</span>${descHtml}<br>${distHtml}<br><br><i style="color:#60a5fa; font-size:11px;">✨ Click to read full article</i>`;
       }),
@@ -407,8 +429,8 @@ function ClusterContent() {
                  const summaryData = summaries[clusterId.toString()];
                  const isObj = typeof summaryData === 'object' && summaryData !== null;
                  
-                 let title = isObj ? (summaryData as any).title : `Narrative ${clusterId + 1}`;
-                 let text = isObj ? (summaryData as any).summary : (summaryData || "");
+                 const title = isObj ? (summaryData as { title: string }).title : `Narrative ${clusterId + 1}`;
+                 let text = isObj ? (summaryData as { summary: string }).summary : (summaryData || "");
 
                  if (typeof text === 'string') {
                    if (text.includes('.')) {
@@ -421,11 +443,12 @@ function ClusterContent() {
                  const clusterPoints = data.filter(d => d.cluster === clusterId);
                  const sources = Array.from(new Set(clusterPoints.map(d => d.source))).filter(Boolean);
                  const baseColor = VIBRANT_COLORS[Math.abs(clusterId) % VIBRANT_COLORS.length];
+                 const sentimentStats = clusterSentiment[clusterId.toString()];
                  
                    return (
                      <div key={clusterId} className="relative overflow-hidden group flex flex-col gap-3 bg-neutral-950/40 hover:bg-neutral-900/60 border border-neutral-800/60 hover:border-neutral-700/80 rounded-xl p-6 transition-all duration-300 shadow-sm">
                        <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-blue-500/50 to-purple-500/50 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                      <div className="flex items-center gap-3">
+                      <div className="flex flex-wrap items-center gap-3">
                         <button 
                           onClick={() => setSelectedCluster(prev => prev === clusterId ? null : clusterId)}
                           className="font-bold px-3 py-1 rounded inline-block transition-transform hover:scale-[1.02] cursor-pointer text-left focus:outline-none"
@@ -437,6 +460,22 @@ function ClusterContent() {
                         >
                           {isObj ? `Narrative ${clusterId + 1}: ${title}` : title}
                         </button>
+                        {sentimentStats && (
+                          <>
+                            <span
+                              className={`text-[10px] px-2.5 py-1 rounded-md font-bold border ${toneBadgeStyles[sentimentStats.tone] ?? "bg-neutral-900/60 text-neutral-300 border-neutral-700"}`}
+                              title={`Mean polarity: ${sentimentStats.mean_polarity}`}
+                            >
+                              Tone: {sentimentStats.tone}
+                            </span>
+                            <span
+                              className={`text-[10px] px-2.5 py-1 rounded-md font-bold border ${stabilityBadgeStyles[sentimentStats.stability] ?? "bg-neutral-900/60 text-neutral-300 border-neutral-700"}`}
+                              title={`Polarity variance: ${sentimentStats.polarity_variance}`}
+                            >
+                              Stability: {sentimentStats.stability}
+                            </span>
+                          </>
+                        )}
                         {ndsScores[clusterId.toString()] !== undefined && (
                           <span className={`text-[10px] px-2.5 py-1 rounded-md font-bold border ${
                             ndsScores[clusterId.toString()] < 0.3 
@@ -458,7 +497,7 @@ function ClusterContent() {
                           Sources: <span className="text-neutral-400">{sources.join(", ") || "Unknown"}</span>
                         </p>
                         <button 
-                          onClick={() => setSelectedNarrative({ id: clusterId.toString(), text, nds: ndsScores[clusterId.toString()], sources })}
+                          onClick={() => setSelectedNarrative({ id: clusterId.toString(), text, nds: ndsScores[clusterId.toString()], sources, sentiment: sentimentStats })}
                           className="text-xs text-blue-400 hover:text-blue-300 font-semibold flex items-center gap-1 bg-blue-900/10 hover:bg-blue-900/30 px-3 py-1.5 rounded-lg transition-colors shrink-0"
                         >
                           View Full Text <ChevronRight className="w-3 h-3" />
@@ -493,7 +532,7 @@ function ClusterContent() {
             <div className="absolute inset-0 bg-black/80 backdrop-blur-sm cursor-pointer" onClick={() => setSelectedNarrative(null)} />
             <div className="relative w-full max-w-2xl bg-neutral-900 border border-neutral-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-300">
               <div className="flex items-center justify-between p-5 border-b border-neutral-800/60 bg-neutral-900/50">
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                   <span className="font-bold text-sm text-blue-400 bg-blue-900/30 px-3 py-1 rounded-md border border-blue-900/50">
                     Narrative {parseInt(selectedNarrative.id) + 1}
                   </span>
@@ -501,6 +540,22 @@ function ClusterContent() {
                     <span className="text-xs font-bold text-neutral-400 bg-neutral-800/50 px-2 py-1 rounded-md">
                       NDS: {selectedNarrative.nds}
                     </span>
+                  )}
+                  {selectedNarrative.sentiment && (
+                    <>
+                      <span
+                        className={`text-xs font-bold px-2 py-1 rounded-md border ${toneBadgeStyles[selectedNarrative.sentiment.tone] ?? "bg-neutral-800/50 text-neutral-300 border-neutral-700"}`}
+                        title={`Mean polarity: ${selectedNarrative.sentiment.mean_polarity}`}
+                      >
+                        Tone: {selectedNarrative.sentiment.tone}
+                      </span>
+                      <span
+                        className={`text-xs font-bold px-2 py-1 rounded-md border ${stabilityBadgeStyles[selectedNarrative.sentiment.stability] ?? "bg-neutral-800/50 text-neutral-300 border-neutral-700"}`}
+                        title={`Polarity variance: ${selectedNarrative.sentiment.polarity_variance}`}
+                      >
+                        Stability: {selectedNarrative.sentiment.stability}
+                      </span>
+                    </>
                   )}
                 </div>
                 <button 
