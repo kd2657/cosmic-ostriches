@@ -10,7 +10,7 @@ import SystemBoot from "@/components/SystemBoot";
 
 // Set this to false to use the Terminal/Cyberpunk style bootup (SystemBoot)
 // ***************************
-const USE_MINIMAL_BOOT = false; 
+const USE_MINIMAL_BOOT = true; 
 // ***************************
 
 type ArticleSentiment = {
