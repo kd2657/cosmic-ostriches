@@ -121,50 +121,6 @@ def fetch_rss_news(query: str, max_articles: int = 50):
     return articles
 
 
-# =====================================================
-# NEWSAPI (secondary)
-# =====================================================
-def fetch_newsapi(query: str, page_size: int = 50) -> List[Dict[str, Any]]:
-    if not NEWS_API_KEY:
-        raise ValueError("NEWSAPI_KEY not set")
-
-    params = {
-        "q": query,
-        "language": "en",
-        "pageSize": min(page_size, 100),
-        "sortBy": "relevancy",
-        "apiKey": NEWS_API_KEY
-    }
-
-    response = requests.get(NEWS_API_URL, params=params, timeout=5)
-
-    if response.status_code != 200:
-        raise Exception(f"NewsAPI Error {response.status_code}")
-
-    data = response.json()
-    articles = data.get("articles", [])
-
-    cleaned_articles = []
-
-    for idx, article in enumerate(articles):
-        title = article.get("title") or ""
-        description = article.get("description") or ""
-
-        if len(title.split()) > 3 or len(description.split()) > 5:
-            uid = article.get("url") or f"article-{idx}-{title[:10]}"
-
-            cleaned_articles.append({
-                "id": uid,
-                "title": title,
-                "description": description,
-                "url": article.get("url"),
-                "source": article.get("source", {}).get("name", "Unknown"),
-                "publish_date": article.get("publishedAt", ""),
-                "embed_text": f"{title}. {description}"
-            })
-
-    return cleaned_articles
-
 
 # =====================================================
 # NEWSAPI.AI (PRIMARY - FULL TEXT)
@@ -291,14 +247,6 @@ def fetch_news(query: str, page_size: int = 50):
     except Exception as e:
         print(f"[FETCH] NewsAPI.ai failed: {e}")
 
-    # --- 2. NewsAPI ---
-    try:
-        print("[FETCH] Trying NewsAPI...")
-        articles = fetch_newsapi(query, page_size)
-        if articles:
-            return articles
-    except Exception as e:
-        print(f"[FETCH] NewsAPI failed: {e}")
 
     # --- 3. RSS ---
     try:
