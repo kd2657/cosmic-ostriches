@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import dynamic from "next/dynamic";
-import { Loader2, X } from "lucide-react";
+import { X } from "lucide-react";
+import GlobalMaximaLoadingBar from "./GlobalMaximaLoadingBar";
 
 // Plotly must be loaded dynamically because it requires the window object
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
@@ -216,12 +217,7 @@ export default function GlobalMaxima({ query, localMode }: GlobalMaximaProps) {
   if (!query) return null;
 
   if (loading) {
-    return (
-      <div className="w-full flex flex-col items-center justify-center py-32 text-white">
-        <Loader2 className="w-10 h-10 animate-spin text-blue-500 mb-4" />
-        <span className="text-xl font-medium tracking-wide">Assembling Global Vectors...</span>
-      </div>
-    );
+    return <GlobalMaximaLoadingBar />;
   }
 
   if (error) {
