@@ -3,8 +3,9 @@
 import { useState, useEffect, Suspense, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
-import { ArrowLeft, Loader2, Settings2, Sparkles, Info, X, ExternalLink, ChevronRight } from "lucide-react";
+import { ArrowLeft, Loader2, Settings2, Sparkles, Info, X, ExternalLink, ChevronRight, Database } from "lucide-react";
 import ClusterLoadingBar from "@/components/ClusterLoadingBar";
+import Tooltip from "@/components/Tooltip";
 
 const formatTextIntoParagraphs = (text: string) => {
   if (!text) return ["Content unavailable."];
@@ -300,9 +301,11 @@ function ClusterContent() {
         <div className="flex items-center gap-4 bg-neutral-900 border border-neutral-800 p-2 rounded-xl">
           <div className="flex items-center gap-2 px-3 border-r border-neutral-800">
             <Settings2 className="w-4 h-4 text-neutral-400" />
-            <span className="text-sm text-neutral-400 hidden lg:inline-flex items-center gap-1 cursor-help" title="Controls how high-dimensional data is projected into 2D.">
-              Projection Method <Info className="w-3 h-3" />
-            </span>
+            <Tooltip content="Controls how high-dimensional data is projected into 2D." className="hidden lg:inline-flex">
+              <span className="text-sm text-neutral-400 flex items-center gap-1 whitespace-nowrap">
+                Projection Method <Info className="w-3 h-3" />
+              </span>
+            </Tooltip>
             <select 
               value={dimReduction} 
               onChange={(e) => setDimReduction(e.target.value)}
@@ -315,9 +318,11 @@ function ClusterContent() {
           </div>
           
           <div className="flex items-center gap-2 px-3 border-r border-neutral-800">
-            <span className="text-sm text-neutral-400 hidden lg:inline-flex items-center gap-1 cursor-help" title="Algorithm to group similar articles into distinct narratives.">
-              Clustering Method <Info className="w-3 h-3" />
-            </span>
+            <Tooltip content="Algorithm to group similar articles into distinct narratives." className="hidden lg:inline-flex">
+              <span className="text-sm text-neutral-400 flex items-center gap-1 whitespace-nowrap">
+                Clustering Method <Info className="w-3 h-3" />
+              </span>
+            </Tooltip>
             <select 
               value={algorithm} 
               onChange={(e) => setAlgorithm(e.target.value)}
@@ -358,10 +363,17 @@ function ClusterContent() {
       <main className="flex-grow flex flex-col min-h-0 space-y-4 relative z-0 w-full overflow-hidden shrink-0">
         {isOfflineCache && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-top-4 fade-in duration-400">
-            <div className="bg-yellow-950 border border-yellow-700 text-yellow-500 px-4 py-2 rounded-full shadow-2xl text-sm flex items-center gap-3 whitespace-nowrap font-medium">
-              <span className="flex h-2 w-2 rounded-full bg-yellow-500 animate-pulse shrink-0 shadow-[0_0_8px_rgba(234,179,8,1)]"></span>
-              NewsAPI Limit Reached. Displaying locally cached vector-matches.
-            </div>
+            {localParam ? (
+              <div className="bg-blue-950 border border-blue-700 text-blue-400 px-4 py-2 rounded-full shadow-2xl text-sm flex items-center gap-3 whitespace-nowrap font-medium">
+                <Database className="w-4 h-4 shrink-0 shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
+                Local Mode Enabled. Displaying results from local database.
+              </div>
+            ) : (
+              <div className="bg-yellow-950 border border-yellow-700 text-yellow-500 px-4 py-2 rounded-full shadow-2xl text-sm flex items-center gap-3 whitespace-nowrap font-medium">
+                <span className="flex h-2 w-2 rounded-full bg-yellow-500 animate-pulse shrink-0 shadow-[0_0_8px_rgba(234,179,8,1)]"></span>
+                NewsAPI Limit Reached. Displaying locally cached vector-matches.
+              </div>
+            )}
           </div>
         )}
         
@@ -513,16 +525,18 @@ function ClusterContent() {
                           </>
                         )}
                         {ndsScores[clusterId.toString()] !== undefined && (
-                          <span className={`text-[10px] px-2.5 py-1 rounded-md font-bold border ${
-                            ndsScores[clusterId.toString()] < 0.3 
-                              ? 'bg-green-950/30 text-green-400 border-green-900/30' 
-                              : ndsScores[clusterId.toString()] < 0.6
-                                ? 'bg-yellow-950/30 text-yellow-500 border-yellow-900/30'
-                                : 'bg-red-950/30 text-red-400 border-red-900/30'
-                          }`} title={`Narrative Diversity Score: ${ndsScores[clusterId.toString()]} (higher means broader discourse)`}>
-                            NDS: {ndsScores[clusterId.toString()]}
-                          </span>
-                        )}
+                          <Tooltip content={`Narrative Diversity Score: ${ndsScores[clusterId.toString()]} (higher means broader discourse)`}>
+                             <span className={`text-[10px] px-2.5 py-1 rounded-md font-bold border ${
+                               ndsScores[clusterId.toString()] < 0.3 
+                                 ? 'bg-green-950/30 text-green-400 border-green-900/30' 
+                                 : ndsScores[clusterId.toString()] < 0.6
+                                   ? 'bg-yellow-950/30 text-yellow-500 border-yellow-900/30'
+                                   : 'bg-red-950/30 text-red-400 border-red-900/30'
+                             }`}>
+                               NDS: {ndsScores[clusterId.toString()]}
+                             </span>
+                           </Tooltip>
+                         )}
                       </div>
                       
                       <p className="text-neutral-300 group-hover:text-neutral-200 transition-colors duration-300 group-hover:text-neutral-200 transition-colors duration-300 leading-relaxed text-[15px] font-medium flex-grow relative z-10 group-hover:text-neutral-100 transition-colors duration-300 line-clamp-3 line-clamp-3">
