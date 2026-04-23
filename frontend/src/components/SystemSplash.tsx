@@ -13,7 +13,7 @@ type BootStatus = {
 
 export default function SystemSplash({ onReady }: { onReady: () => void }) {
   const [status, setStatus] = useState<BootStatus | null>(null);
-  const [displayPct, setDisplayPct] = useState(0);
+  const [displayPct, setDisplayPct] = useState(5);
   const [fadeOut, setFadeOut] = useState(false);
   const [dots, setDots] = useState("");
 
@@ -117,7 +117,7 @@ export default function SystemSplash({ onReady }: { onReady: () => void }) {
 
           <div className="h-6">
             <p className="text-[10px] text-neutral-500 font-mono tracking-[0.2em] uppercase transition-all duration-500">
-              {status?.label ? `${status.label}${dots}` : `Initializing Inference Engine${dots}`}
+              {status?.label ? `${status.label}${dots}` : `Initializing Vector Engine${dots}`}
             </p>
           </div>
         </div>
@@ -125,7 +125,7 @@ export default function SystemSplash({ onReady }: { onReady: () => void }) {
 
       {/* Version footprint */}
       <div className="absolute bottom-8 text-[9px] font-mono text-neutral-800 tracking-widest uppercase">
-        Inference System v3.0 // Ready for Synthesis
+        WELCOME TO THE LOCAL MINIMA
       </div>
     </div>
   );

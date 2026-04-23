@@ -41,10 +41,9 @@ type GlobalMaximaProps = {
 };
 
 // ── Plotly error handler ───────────────────────────────────────────────────
-function handlePlotlyError(err: any) {
-  if (err?.message?.includes('_scrollZoom')) return;
-  console.warn('[Plotly]', err);
-}
+// Silently swallow all internal Plotly errors — they are handled by the
+// unhandledrejection suppressor above and don't need to surface to the terminal.
+function handlePlotlyError(_err: any) { /* intentionally silent */ }
 
 const sentimentBadgeStyles: Record<string, string> = {
   positive: "bg-emerald-950/70 text-emerald-300 border-emerald-800",
@@ -63,15 +62,21 @@ export default function GlobalMaxima({ query, localMode }: GlobalMaximaProps) {
   const [error, setError] = useState<string | null>(null);
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
 
-  // Suppress the Plotly _scrollZoom unhandled rejection globally.
+  // Suppress the Plotly _scrollZoom unhandled rejection at the earliest possible stage.
+  // This must be registered on mount so it is active before any Plotly renders.
+  // It catches both the TypeError variant and any string-based rejections.
   useEffect(() => {
     const handler = (event: PromiseRejectionEvent) => {
-      if (event.reason instanceof TypeError && event.reason.message?.includes('_scrollZoom')) {
+      const reason = event.reason;
+      const msg: string = (reason instanceof Error ? reason.message : String(reason ?? ''));
+      if (msg.includes('_scrollZoom') || msg.includes("Cannot read properties of undefined (reading '_scrollZoom')")) {
         event.preventDefault();
+        event.stopImmediatePropagation();
       }
     };
-    window.addEventListener('unhandledrejection', handler);
-    return () => window.removeEventListener('unhandledrejection', handler);
+    // useCapture: true ensures we run before Next.js's internal reporter
+    window.addEventListener('unhandledrejection', handler, true);
+    return () => window.removeEventListener('unhandledrejection', handler, true);
   }, []);
 
   // Data fetching effect
@@ -214,8 +219,7 @@ export default function GlobalMaxima({ query, localMode }: GlobalMaximaProps) {
     return (
       <div className="w-full flex flex-col items-center justify-center py-32 text-white">
         <Loader2 className="w-10 h-10 animate-spin text-blue-500 mb-4" />
-        <span className="text-xl font-medium tracking-wide">Crunching Global Vectors...</span>
-        <span className="text-sm text-neutral-400 mt-2">Computing thousands of semantic distances</span>
+        <span className="text-xl font-medium tracking-wide">Assembling Global Vectors...</span>
       </div>
     );
   }
@@ -231,7 +235,7 @@ export default function GlobalMaxima({ query, localMode }: GlobalMaximaProps) {
   if (!data || Object.keys(data.countries).length === 0) {
     return (
       <div className="w-full text-center text-neutral-400 p-8 bg-neutral-900/40 rounded-xl">
-        No geographic data found for the given query. Try a more general topic.
+        No geographic data found for the given query. Please try another topic.
       </div>
     );
   }
@@ -253,12 +257,13 @@ export default function GlobalMaxima({ query, localMode }: GlobalMaximaProps) {
         
         <div className="w-full h-[60vh] min-h-[400px]">
           <Plot
-            key={`map-${top_countries.length}`}
+            key={`map-${query}`}
             data={mapData}
             layout={mapLayout}
             config={commonConfig}
             style={mapStyle}
             onError={handlePlotlyError}
+            onUpdate={handlePlotlyError}
             onInitialized={handlePlotInitialized}
           />
         </div>

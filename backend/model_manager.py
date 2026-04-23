@@ -19,15 +19,17 @@ class ModelManager:
     """
 
     STAGES = [
-        {"id": "chroma", "label": "Connecting to ChromaDB vector store", "pct": 10},
-        {"id": "vectorizer", "label": "Loading SentenceTransformer vectorizer (all-MiniLM-L6-v2)", "pct": 45},
-        {"id": "summarizer", "label": "Initializing offline NLP summarization pipeline (DistilGPT2)", "pct": 75},
-        {"id": "ready", "label": "All systems nominal", "pct": 100},
+        {"id": "chroma", "label": "CONNECTING TO VECTOR DATABASE", "pct": 10},
+        {"id": "vectorizer", "label": "LOADING SENTENCETRANSFORMER MODEL (all-MiniLM-L6-v2)", "pct": 35},
+        {"id": "summarizer", "label": "INITIALIZING NLP SUMMARIZATION PIPELINE (DistilGPT2)", "pct": 50},
+        {"id": "sentiment", "label": "LOADING SENTIMENT ANALYSIS MODEL (Roberta)", "pct": 95},
+        {"id": "ready", "label": "ALL SYSTEMS ONLINE // WELCOME TO THE LOCAL MINIMA", "pct": 100}
     ]
 
     def __init__(self):
         self.model = None
         self.summarizer = None
+        self.sentiment = None
         self._ready = False
         self._current_stage = 0
         self._stage_label = "Waiting for initialization..."
@@ -71,8 +73,14 @@ class ModelManager:
             self._set_stage(2)
             self.summarizer = pipeline("text-generation", model="distilgpt2")
 
-            # Stage 3: Ready
+            # Stage 3: Sentiment Classifier
             self._set_stage(3)
+            # Importing locally to avoid circular dependency if any
+            from sentiment import SentimentClassifier
+            self.sentiment = SentimentClassifier()
+
+            # Stage 4: Ready
+            self._set_stage(4)
             self._ready = True
 
         except Exception as e:

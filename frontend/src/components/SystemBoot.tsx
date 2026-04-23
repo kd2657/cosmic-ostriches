@@ -25,7 +25,7 @@ function getTimestamp(): string {
 export default function SystemBoot({ onReady }: { onReady: () => void }) {
   const [status, setStatus] = useState<BootStatus | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [displayPct, setDisplayPct] = useState(0);
+  const [displayPct, setDisplayPct] = useState(5);
   const [fadeOut, setFadeOut] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
   const prevStageRef = useRef(-1);
@@ -74,7 +74,7 @@ export default function SystemBoot({ onReady }: { onReady: () => void }) {
           readyTriggeredRef.current = true;
           setLogs(prev => [
             ...prev,
-            { text: "ALL SYSTEMS NOMINAL — VECTOR ENGINE ONLINE", type: "system", timestamp: getTimestamp() },
+            { text: "ALL SYSTEMS ACTIVE — VECTOR ENGINE ONLINE", type: "system", timestamp: getTimestamp() },
           ]);
           // Brief delay for user to see the final message, then fade
           setTimeout(() => setFadeOut(true), 800);
@@ -146,7 +146,7 @@ export default function SystemBoot({ onReady }: { onReady: () => void }) {
             </span>
           </h1>
           <p className="text-xs tracking-[0.35em] text-neutral-600 uppercase font-mono">
-            Neural Inference Engine v3.0
+            Vector Engine Boot Sequence
           </p>
         </div>
 
@@ -220,7 +220,7 @@ export default function SystemBoot({ onReady }: { onReady: () => void }) {
 
           {/* Current stage label */}
           <p className="text-[11px] text-neutral-600 font-mono text-center truncate">
-            {status?.label || "Establishing connection to inference runtime..."}
+            {status?.label || "Connecting to the Local Minima ..."}
           </p>
         </div>
       </div>

@@ -1,14 +1,15 @@
 import os
 import sys
-import warnings
 
 os.environ["KMP_WARNINGS"] = "0"
 os.environ["OMP_WARNINGS"] = "0"
 
 if sys.platform != "win32":
+    import warnings
     warnings.filterwarnings("ignore", category=UserWarning, module="multiprocessing.resource_tracker")
     try:
         from multiprocessing import resource_tracker
+        # Monkey-patch to suppress the "leaked semaphore" warning on exit
         resource_tracker._warn = lambda *args, **kwargs: None
     except Exception:
         pass
@@ -24,26 +25,21 @@ from sentiment import SentimentClassifier
 from cluster_stream import stream_search_pipeline
 from fastapi.responses import StreamingResponse
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Start model loading in the background when the server boots."""
     model_manager.start_background_init()
     yield
 
-
 app = FastAPI(title="The Local Minima API", lifespan=lifespan)
 
-
-
-
-# Sentiment classifier loads its own model on first use (deferred)
-_sentiment_classifier = None
+# Sentiment classifier is pre-loaded by ModelManager during boot sequence
 def get_sentiment_classifier():
-    global _sentiment_classifier
-    if _sentiment_classifier is None:
-        _sentiment_classifier = SentimentClassifier()
-    return _sentiment_classifier
+    if model_manager.sentiment is None:
+        # Fallback in case a request hits before background thread finishes Stage 4
+        from sentiment import SentimentClassifier
+        model_manager.sentiment = SentimentClassifier()
+    return model_manager.sentiment
 
 # Allow Next.js frontend to talk to this backend
 app.add_middleware(
@@ -267,17 +263,14 @@ def run_global_analysis(req: SearchRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
-
 
 @app.get("/api/status")
 def get_system_status():
     """Returns the current model initialization status for the frontend boot sequence."""
     return model_manager.get_status()
-
 
 @app.get("/api/article/{article_id:path}")
 def fetch_single_article(article_id: str):

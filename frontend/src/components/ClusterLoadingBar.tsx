@@ -72,7 +72,7 @@ export default function ClusterLoadingBar({
       {/* Pulsing title */}
       <div className="text-center space-y-2">
         <h2 className="text-xl font-bold text-white font-mono tracking-tight animate-pulse">
-            {isStreaming ? "Live Narrative Synthesis" : "Narrative Synthesis"}
+            {isStreaming ? "Clustering" : "Clustering"}
         </h2>
         <p className="text-xs text-neutral-600 font-mono tracking-widest uppercase truncate max-w-[300px]">
           {activeLabel}
@@ -93,7 +93,7 @@ export default function ClusterLoadingBar({
         </div>
         <div className="flex justify-between items-center text-[10px] font-mono">
           <span className="text-neutral-600 uppercase tracking-tighter">
-            {isStreaming ? "Streaming Progress" : `Stage ${simStage + 1}/${STAGES.length}`}
+            {isStreaming ? "Clustering Progress" : `Stage ${simStage + 1}/${STAGES.length}`}
           </span>
           <span className="text-indigo-400 font-bold tabular-nums">{displayPct}%</span>
         </div>

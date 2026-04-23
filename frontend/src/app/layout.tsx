@@ -27,6 +27,26 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                function scrollZoomSuppressor(event) {
+                  var reason = event.reason;
+                  var msg = (reason && reason.message) ? reason.message : String(reason || '');
+                  if (msg.indexOf('_scrollZoom') !== -1) {
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                  }
+                }
+                // Use capture phase (true) so this fires BEFORE Next.js's internal error reporter
+                window.addEventListener('unhandledrejection', scrollZoomSuppressor, true);
+              })();
+            `,
+          }}
+        />
+      </head>
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );

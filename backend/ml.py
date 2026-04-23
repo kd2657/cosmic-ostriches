@@ -1,31 +1,35 @@
 import os
 import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import chromadb
-from umap import UMAP
-from sentence_transformers import SentenceTransformer, util
-from sklearn.cluster import HDBSCAN, AgglomerativeClustering, AffinityPropagation
-from sklearn.mixture import GaussianMixture
-from sklearn.manifold import TSNE
-from transformers import pipeline
-from google import genai
-from typing import List, Dict, Any, Optional
-import numpy as np
 import warnings
 from threading import Lock
-from transformers import logging as transformers_logging
+from typing import Any, Dict, List, Optional
 
+import chromadb
+import numpy as np
+from google import genai
+from sentence_transformers import util
+from sklearn.cluster import (AffinityPropagation, AgglomerativeClustering, HDBSCAN)
+from sklearn.mixture import GaussianMixture
+from sklearn.manifold import TSNE
+from transformers import logging as transformers_logging
+from transformers import pipeline
+from umap import UMAP
+
+from model_manager import ModelManager
+
+# Setup path for internal imports
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Suppress noisy model-loading warnings
 warnings.filterwarnings("ignore", category=FutureWarning, module="sklearn.*")
 warnings.filterwarnings("ignore", category=UserWarning, module="umap.*")
 warnings.filterwarnings("ignore", module="transformers.*")
 transformers_logging.set_verbosity_error()
 
-from model_manager import ModelManager
-
 # Singleton model manager — created immediately, but models load in background
 model_manager = ModelManager()
 
-# Initialize ChromaDB persistent client locally (fast, no ML involved)
+# Initialize ChromaDB persistent client locally
 CHROMA_PATH = os.path.join(os.path.dirname(__file__), "chroma_db")
 os.makedirs(CHROMA_PATH, exist_ok=True)
 chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
@@ -35,9 +39,23 @@ collection = chroma_client.get_or_create_collection(name="news_diversity_v3_coll
 # can abort the process if multiple FastAPI threads enter it concurrently.
 _cluster_pipeline_lock = Lock()
 
+# Sentiment/Narrative Logic Constants
 TONE_NEUTRAL_THRESHOLD = 0.10
 STABILITY_MIXED_THRESHOLD = 0.03
 STABILITY_POLARIZED_THRESHOLD = 0.15
+
+
+def _get_model():
+    """Proxy for the singleton model manager's vectorizer."""
+    if not model_manager.model:
+        # If not loaded yet, force synchronous load (safe due to singleton)
+        model_manager.initialize()
+    return model_manager.model
+
+
+def _get_summarizer():
+    """Proxy for the singleton model manager's local NLP pipeline."""
+    return model_manager.summarizer
 
 
 def _classify_cluster_tone(mean_polarity: float) -> str:
@@ -265,94 +283,8 @@ def _get_reduced_embeddings(embeddings: np.ndarray, dim_reduction: str) -> np.nd
             return np.zeros((len(embeddings), 2))
         return UMAP(n_neighbors=n_neighbors, min_dist=0.1, n_components=2, random_state=42).fit_transform(embeddings)
 
-def process_batch_cluster(
-    articles: List[Dict[str, Any]], 
-    method: str = "hdbscan", 
-    cluster_k: Optional[int] = None,
-    dim_reduction: str = "umap"
-) -> List[Dict[str, Any]]:
-    """
-    Fetches embeddings, performs UMAP dimensionality reduction to 2D for the UI,
-    and applies the chosen clustering algorithm.
-    """
-    if not articles:
-        return []
-    
-    # Retrieve
-    ids = [a["id"] for a in articles]
-    data = collection.get(ids=ids, include=["embeddings", "metadatas"])
-    
-    if data.get("embeddings") is None or len(data["embeddings"]) == 0:
-        return []
-    
-    embeddings = np.array(data["embeddings"])
-
-    with _cluster_pipeline_lock:
-        labels = _get_cluster_labels(embeddings, method, cluster_k)
-        reduced_embeddings = _get_reduced_embeddings(embeddings, dim_reduction)
-
-    from models.metrics import compute_article_distances_from_center
-    article_distances = compute_article_distances_from_center(embeddings, np.array(labels))
-
-    sentiment_by_id = {a.get("id"): a.get("sentiment") for a in articles}
-
-    # Build response points
-    results = []
-    cluster_texts = {}
-    cluster_polarities = {}
-    
-    # Hybrid Gemini / Local Auto-Summarization Key detection
-    gemini_key = os.getenv("GEMINI_API_KEY")
-    client = None
-    if gemini_key:
-        try:
-            client = genai.Client(api_key=gemini_key)
-        except Exception:
-            pass
-
-    used_local_fallback = False if client else True
-    
-    for idx, article_id in enumerate(ids):
-        meta = data["metadatas"][idx]
-        cluster_id = int(labels[idx])
-        sentiment = sentiment_by_id.get(article_id)
-        
-        if cluster_id not in cluster_texts:
-            cluster_texts[cluster_id] = []
-        if cluster_id not in cluster_polarities:
-            cluster_polarities[cluster_id] = []
-
-        if sentiment and sentiment.get("polarity") is not None:
-            try:
-                cluster_polarities[cluster_id].append(float(sentiment.get("polarity")))
-            except (TypeError, ValueError):
-                pass
-            
-        t = meta.get("title", "")
-        b = meta.get("body", "")
-        
-        # Chunk logic based on API constraints
-        if b:
-            chunk = b[:2500] if client else b[:200]
-            cluster_texts[cluster_id].append(f"{t}: {chunk}")
-        else:
-            cluster_texts[cluster_id].append(t)
-            
-        results.append({
-            "id": article_id,
-            "title": meta.get("title", "Unknown"),
-            "description": meta.get("description", ""),
-            "url": meta.get("url", ""),
-            "source": meta.get("source", ""),
-            "body": meta.get("body", ""),
-            "publish_date": meta.get("publish_date", ""),
-            "sentiment": sentiment,
-            "cluster": cluster_id,
-            "x": float(reduced_embeddings[idx][0]),
-            "y": float(reduced_embeddings[idx][1]),
-            "distance_from_center": round(float(article_distances[idx]), 3) if cluster_id != -1 else 0.0
-        })
-        
+def _generate_narrative_summaries(cluster_texts: Dict[int, List[str]], client: Optional[genai.Client], target_clusters: List[int]) -> tuple[Dict[str, Any], bool]:
+    """Internal helper to generate summaries using Gemini or local fallback."""
     summaries = {}
     cluster_strings = ""
     for cluster_id in cluster_texts:
@@ -402,12 +334,14 @@ def process_batch_cluster(
             used_local_fallback = True
 
     if not summary_generated:
+        # Using the pre-loaded summarizer from model_manager via the proxy
+        summarizer = _get_summarizer()
         for cid in target_clusters:
             input_text = cluster_texts[cid][0][:100] if cluster_texts.get(cid) else "Global news."
             prompt = f"Summarize the context: {input_text}"
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                out = _get_summarizer()(prompt, max_new_tokens=25, temperature=0.3, do_sample=True, return_full_text=False, pad_token_id=50256)
+                out = summarizer(prompt, max_new_tokens=25, temperature=0.3, do_sample=True, return_full_text=False, pad_token_id=50256)
             generated = out[0]["generated_text"].strip().split("\n")[0]
             summaries[str(cid)] = generated
 
@@ -418,20 +352,20 @@ def process_batch_cluster(
     method: str = "hdbscan", 
     cluster_k: Optional[int] = None,
     dim_reduction: str = "umap"
-) -> List[Dict[str, Any]]:
+) -> Dict[str, Any]:
     """
     Fetches embeddings, performs UMAP dimensionality reduction to 2D for the UI,
     and applies the chosen clustering algorithm.
     """
     if not articles:
-        return []
+        return {"points": [], "summaries": {}, "nds_scores": {}, "cluster_sentiment": {}, "is_local_summary": False}
     
     # Retrieve
     ids = [a["id"] for a in articles]
     data = collection.get(ids=ids, include=["embeddings", "metadatas"])
     
     if data.get("embeddings") is None or len(data["embeddings"]) == 0:
-        return []
+        return {"points": [], "summaries": {}, "nds_scores": {}, "cluster_sentiment": {}, "is_local_summary": False}
     
     embeddings = np.array(data["embeddings"])
 
@@ -442,9 +376,12 @@ def process_batch_cluster(
     from models.metrics import compute_article_distances_from_center
     article_distances = compute_article_distances_from_center(embeddings, np.array(labels))
 
+    sentiment_by_id = {a.get("id"): a.get("sentiment") for a in articles}
+
     # Build response points
     results = []
     cluster_texts = {}
+    cluster_polarities = {}
     
     gemini_key = os.getenv("GEMINI_API_KEY")
     client = genai.Client(api_key=gemini_key) if gemini_key else None
@@ -452,8 +389,19 @@ def process_batch_cluster(
     for idx, article_id in enumerate(ids):
         meta = data["metadatas"][idx]
         cluster_id = int(labels[idx])
-        if cluster_id not in cluster_texts: cluster_texts[cluster_id] = []
+        sentiment = sentiment_by_id.get(article_id)
         
+        if cluster_id not in cluster_texts:
+            cluster_texts[cluster_id] = []
+        if cluster_id not in cluster_polarities:
+            cluster_polarities[cluster_id] = []
+
+        if sentiment and sentiment.get("polarity") is not None:
+            try:
+                cluster_polarities[cluster_id].append(float(sentiment.get("polarity")))
+            except (TypeError, ValueError):
+                pass
+            
         t, b = meta.get("title", ""), meta.get("body", "")
         chunk = b[:2500] if client else b[:200]
         cluster_texts[cluster_id].append(f"{t}: {chunk}" if b else t)
@@ -466,6 +414,7 @@ def process_batch_cluster(
             "source": meta.get("source", ""),
             "body": meta.get("body", ""),
             "publish_date": meta.get("publish_date", ""),
+            "sentiment": sentiment,
             "cluster": cluster_id,
             "x": float(reduced_embeddings[idx][0]),
             "y": float(reduced_embeddings[idx][1]),
