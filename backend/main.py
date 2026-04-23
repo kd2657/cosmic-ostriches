@@ -181,17 +181,14 @@ async def stream_search(req: SearchRequest):
     )
 
 @app.get("/api/daily-gradient")
-def get_daily_gradient(force_local: bool = False):
+def get_daily_gradient(force_local: bool = False, category: str = "all"):
     try:
         articles = []
         if force_local:
-            # Query the database for recent top articles (if we have a way to fetch recent)
-            # Actually our query_local_database requires a query string, but we can just pull some vectors.
-            # But query_local_database needs a query string.
-            # We can use "news" as a generic query to pull the most recent / general articles.
-            articles = query_local_database("news", n_results=100)
+            # Query the database for recent top articles filtering by category if requested
+            articles = query_local_database("news", n_results=100, category=category)
         else:
-            articles = fetch_daily_gradient(page_size=100)
+            articles = fetch_daily_gradient(page_size=100, category=category)
             if articles:
                 articles = vectorize_and_store(articles)
                 

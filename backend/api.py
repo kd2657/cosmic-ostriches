@@ -97,7 +97,7 @@ def fetch_news(query: str, page_size: int = 50) -> List[Dict[str, Any]]:
     return cleaned_articles
 
 @lru_cache(maxsize=32)
-def fetch_daily_gradient(page_size: int = 100) -> List[Dict[str, Any]]:
+def fetch_daily_gradient(page_size: int = 100, category: str = "all") -> List[Dict[str, Any]]:
     """
     Fetches the latest top headlines for the daily gradient via NewsAPI.ai.
     """
@@ -108,7 +108,7 @@ def fetch_daily_gradient(page_size: int = 100) -> List[Dict[str, Any]]:
         "action": "getArticles",
         "lang": "eng",
         "articlesPage": 1,
-        "articlesCount": min(page_size, 100),
+        "articlesCount": 100,
         "articlesSortBy": "date",
         "resultType": "articles",
         "includeArticleCategories": True,
@@ -117,6 +117,18 @@ def fetch_daily_gradient(page_size: int = 100) -> List[Dict[str, Any]]:
         "apiKey": NEWS_API_AI_KEY,
         "articleBodyLen": -1
     }
+    
+    if category != "all":
+        # Mapping to NewsAPI.ai (Event Registry) DMOZ categories for precise topical filtering
+        uri_map = {
+            "politics": "dmoz/Society/Politics",
+            "business": "dmoz/Business",
+            "technology": "dmoz/Computers",
+            "sports/entertainment": ["dmoz/Sports", "dmoz/Arts/Entertainment"]
+        }
+        if category in uri_map:
+            payload["categoryUri"] = uri_map[category]
+
 
     response = requests.post(NEWS_API_AI_URL, json=payload)
     
@@ -177,4 +189,17 @@ def fetch_daily_gradient(page_size: int = 100) -> List[Dict[str, Any]]:
                 "embed_text": f"{title}. {body}"
             })
             
-    return cleaned_articles
+    # Post-filtering for strict adherence
+    if category != "all":
+        target = category.split('/')[-1].lower() # e.g. 'politics'
+        if target == "entertainment": target = "arts" # Event Registry often uses Arts for entertainment
+        
+        filtered = []
+        for a in cleaned_articles:
+            cat_str = a["category"].lower()
+            # Check if target category appears in the article's category label
+            if target in cat_str or (target == "politics" and "society" in cat_str):
+                filtered.append(a)
+        return filtered[:page_size]
+            
+    return cleaned_articles[:page_size]

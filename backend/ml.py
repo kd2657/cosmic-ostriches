@@ -11,6 +11,7 @@ from sentence_transformers import util
 from sklearn.cluster import (AffinityPropagation, AgglomerativeClustering, HDBSCAN)
 from sklearn.mixture import GaussianMixture
 from sklearn.manifold import TSNE
+from sklearn.metrics import silhouette_score, davies_bouldin_score
 from transformers import logging as transformers_logging
 from transformers import pipeline
 from umap import UMAP
@@ -131,20 +132,34 @@ def fetch_vectors(article_ids: List[str]):
     """Fetch stored embeddings directly from ChromaDB."""
     return collection.get(ids=article_ids, include=["embeddings", "metadatas"])
 
-def query_local_database(query_text: str, n_results: int = 50) -> List[Dict[str, Any]]:
+def query_local_database(query_text: str, n_results: int = 50, category: Optional[str] = None) -> List[Dict[str, Any]]:
     """
     Fallback method: Embeds the search query and searches the local ChromaDB 
     for the semantically closest existing articles when the API fails.
+    Supports topical filtering via metadata.
     """
     if collection.count() == 0:
         return []
         
     query_embedding = _get_model().encode([query_text]).tolist()
     
+    where = None
+    if category and category != "all":
+        # Map the frontend ID to likely stored category labels
+        cat_map = {
+            "politics": "Politics", 
+            "business": "Business", 
+            "technology": "Technology", 
+            "sports/entertainment": "Sports"
+        }
+        target = cat_map.get(category, category.capitalize())
+        where = {"category": target}
+    
     # Query ChromaDB (returns Dict of lists)
     results = collection.query(
         query_embeddings=query_embedding,
-        n_results=min(n_results, collection.count())
+        n_results=min(n_results, collection.count()),
+        where=where
     )
     
     articles = []
@@ -160,6 +175,8 @@ def query_local_database(query_text: str, n_results: int = 50) -> List[Dict[str,
                 "description": meta.get("description", ""),
                 "url": meta.get("url", ""),
                 "source": meta.get("source", ""),
+                "body": meta.get("body", ""),
+                "category": meta.get("category", "General"),
                 "publish_date": meta.get("publish_date", ""),
                 "embed_text": f"{meta.get('title', '')}. {meta.get('description', '')}"
             })
@@ -424,16 +441,19 @@ def process_batch_cluster(
     target_clusters = [cid for cid in cluster_texts if cid != -1]
     summaries, used_local_fallback = _generate_narrative_summaries(cluster_texts, client, target_clusters)
         
-    from models.metrics import compute_narrative_diversity_score
+    from models.metrics import compute_narrative_diversity_score, compute_clustering_eval_metrics
     nds_scores = compute_narrative_diversity_score(embeddings, np.array(labels))
     cluster_sentiment = _compute_cluster_sentiment_stats(cluster_polarities)
+    
+    eval_metrics = compute_clustering_eval_metrics(embeddings, np.array(labels), nds_scores)
             
     return {
         "points": results, 
         "summaries": summaries,
         "nds_scores": nds_scores,
         "cluster_sentiment": cluster_sentiment,
-        "is_local_summary": used_local_fallback
+        "is_local_summary": used_local_fallback,
+        "eval_metrics": eval_metrics
     }
 
 def farthest_point_sampling(embeddings: np.ndarray, k: int, categories: List[str] = None, max_per_category: int = 2) -> List[int]:
@@ -630,7 +650,20 @@ def process_daily_gradient(articles: List[Dict[str, Any]], n_main: int = 8, n_re
             "related_articles": related_articles
         })
         
-    return briefing
+    eval_metrics = {}
+    if len(main_indices) > 1:
+        main_embs = embeddings[main_indices]
+        # Cosine distance = 1 - cosine_similarity
+        sim_matrix = util.cos_sim(main_embs, main_embs).numpy()
+        n_main_chosen = len(main_indices)
+        sum_sim = np.sum(sim_matrix) - np.trace(sim_matrix) # excluding diagonal
+        avg_sim = sum_sim / (n_main_chosen * (n_main_chosen - 1))
+        eval_metrics["avg_pairwise_distance"] = round(1.0 - float(avg_sim), 3)
+        
+    return {
+        "briefing": briefing,
+        "eval_metrics": eval_metrics
+    }
 
 def get_article_by_id(article_id: str) -> Optional[Dict[str, Any]]:
     """Retrieve a single article by its explicit ID from ChromaDB."""

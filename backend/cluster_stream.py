@@ -109,13 +109,16 @@ async def stream_search_pipeline(query: str, algorithm: str, k: Optional[int], d
             
         target_clusters = [cid for cid in cluster_texts if cid != -1]
         summaries, used_local_fallback = _generate_narrative_summaries(cluster_texts, client, target_clusters)
+        from models.metrics import compute_narrative_diversity_score, compute_clustering_eval_metrics
         nds_scores = compute_narrative_diversity_score(embeddings, np.array(labels))
+        eval_metrics = compute_clustering_eval_metrics(embeddings, np.array(labels), nds_scores)
         
         # Phase 4: Yield Result
         final_data = {
             "points": results,
             "summaries": summaries,
             "nds_scores": nds_scores,
+            "eval_metrics": eval_metrics,
             "is_local_summary": used_local_fallback,
             "is_offline_cache": is_offline_cache
         }

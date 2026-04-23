@@ -2,9 +2,20 @@
 
 import { useState, useEffect } from "react";
 import { Loader2, ChevronDown, ChevronUp, Link as LinkIcon, Compass } from "lucide-react";
+import MetricsOverlay from "./MetricsOverlay";
+
+const CATEGORIES = [
+  { id: "all", label: "All" },
+  { id: "politics", label: "Politics" },
+  { id: "sports/entertainment", label: "Sports & Entertainment" },
+  { id: "business", label: "Business" },
+  { id: "technology", label: "Technology" }
+];
 
 export default function DailyGradient({ localMode = false }: { localMode?: boolean }) {
   const [gradient, setGradient] = useState<any[]>([]);
+  const [evalMetrics, setEvalMetrics] = useState({});
+  const [category, setCategory] = useState("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
@@ -20,10 +31,18 @@ export default function DailyGradient({ localMode = false }: { localMode?: boole
   useEffect(() => {
     async function loadGradient() {
       try {
-        const res = await fetch(`http://localhost:8000/api/daily-gradient?force_local=${localMode}`);
+        const res = await fetch(`http://localhost:8000/api/daily-gradient?force_local=${localMode}&category=${category}`);
         if (!res.ok) throw new Error("Failed to fetch daily gradient");
         const json = await res.json();
-        setGradient(json.results || []);
+        // Backend now returns { briefing: [...], eval_metrics: {...} } or just [...]
+        if (json.results?.briefing) {
+            setGradient(json.results.briefing);
+            setEvalMetrics(json.results.eval_metrics || {});
+        } else {
+            setGradient(json.results || []);
+            setEvalMetrics({});
+        }
+
       } catch (err: any) {
         setError(err.message);
       } finally {
@@ -31,8 +50,9 @@ export default function DailyGradient({ localMode = false }: { localMode?: boole
       }
     }
     setLoading(true);
+    setExpandedIndex(null);
     loadGradient();
-  }, [localMode]);
+  }, [localMode, category]);
 
   if (loading) {
      return (
@@ -58,6 +78,24 @@ export default function DailyGradient({ localMode = false }: { localMode?: boole
              Diverse narratives from the last 24 hours in a bite-sized serving! Expand nodes to see different perspectives.
           </p>
        </div>
+
+       <div className="flex justify-center gap-2 mb-10 overflow-x-auto py-2 custom-scrollbar">
+          {CATEGORIES.map(c => (
+             <button
+               key={c.id}
+               onClick={() => setCategory(c.id)}
+               className={`px-5 py-2.5 rounded-full text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all duration-300 border ${
+                 category === c.id 
+                   ? 'bg-blue-600 border-blue-500 text-white shadow-[0_0_15px_rgba(59,130,246,0.5)] scale-105' 
+                   : 'bg-neutral-900/40 border-neutral-800 text-neutral-500 hover:border-blue-500/50 hover:text-blue-400 hover:bg-blue-500/5'
+               }`}
+             >
+               {c.label}
+             </button>
+          ))}
+       </div>
+       
+       <MetricsOverlay metrics={evalMetrics} title="Daily Gradient Metrics" />
        
        <div className="flex flex-col gap-6 pb-20">
          {gradient.map((item, idx) => {
