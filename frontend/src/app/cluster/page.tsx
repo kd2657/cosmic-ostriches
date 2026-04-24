@@ -631,8 +631,8 @@ function ClusterContent() {
 
         {/* Selected Article Modal */}
         {selectedArticle && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-[#0a0a0a] border border-neutral-800 rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/70 backdrop-blur-md animate-in fade-in duration-300">
+            <div className="bg-[#0a0a0a] border border-neutral-800 rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-[0_0_60px_-15px_rgba(59,130,246,0.15)] ring-1 ring-white/5 overflow-hidden animate-in zoom-in-95 duration-400">
               <div className="p-5 md:p-6 border-b border-neutral-800/60 bg-neutral-900/40 flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
                   <h2 className="text-xl md:text-2xl font-bold text-white leading-snug truncate">
