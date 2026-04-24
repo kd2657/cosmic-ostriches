@@ -628,6 +628,60 @@ function ClusterContent() {
             </div>
           </div>
         )}
+
+        {/* Selected Article Modal */}
+        {selectedArticle && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-[#0a0a0a] border border-neutral-800 rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+              <div className="p-5 md:p-6 border-b border-neutral-800/60 bg-neutral-900/40 flex items-start justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <h2 className="text-xl md:text-2xl font-bold text-white leading-snug truncate">
+                    {selectedArticle.title}
+                  </h2>
+                  <div className="flex flex-wrap items-center gap-3 mt-3">
+                    <span className="text-xs font-bold text-neutral-400 bg-neutral-800/50 px-2 py-1 rounded-md">
+                      {selectedArticle.source || "Unknown Source"}
+                    </span>
+                    {selectedArticle.publish_date && (
+                      <span className="text-xs text-neutral-500">
+                        {new Date(selectedArticle.publish_date).toLocaleDateString()}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setSelectedArticle(null)}
+                  className="p-2 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded-full transition-colors flex-shrink-0"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-6 md:p-8 overflow-y-auto max-h-[60vh] styled-scrollbar">
+                <div className="space-y-4">
+                  {formatTextIntoParagraphs(selectedArticle.body || "No content available for this article.").map((paragraph, idx) => (
+                    <p key={idx} className="text-neutral-300 text-[15px] md:text-base leading-relaxed">
+                      {paragraph}
+                    </p>
+                  ))}
+                </div>
+              </div>
+              <div className="p-5 border-t border-neutral-800/60 bg-neutral-900/50 flex items-center justify-end">
+                {selectedArticle.url ? (
+                  <a 
+                    href={selectedArticle.url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-lg transition-colors shadow-lg shadow-blue-900/20"
+                  >
+                    Read Original <ExternalLink className="w-4 h-4" />
+                  </a>
+                ) : (
+                  <span className="text-sm text-neutral-500">Original link unavailable</span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );
