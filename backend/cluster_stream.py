@@ -34,14 +34,26 @@ async def stream_search_pipeline(query: str, algorithm: str, k: Optional[int], d
             articles = query_local_database(query)
         else:
             try:
-                # Use a small wait to allow frontend to register the first event
-                articles = fetch_news(query)
-                if articles:
+                # 1. Fetch live news (Primary + RSS Fallback)
+                live_articles = fetch_news(query)
+                
+                # 2. Fetch local historical news
+                local_articles = query_local_database(query)
+                
+                # 3. Merge: Prioritize live RSS, then append local DB
+                seen_ids = {a["id"] for a in live_articles}
+                articles = live_articles
+                for a in local_articles:
+                    if a["id"] not in seen_ids:
+                        articles.append(a)
+                        seen_ids.add(a["id"])
+
+                if live_articles:
                     yield f"data: {json.dumps({'event': 'stage', 'data': {'stage': '🧬 Embedding discourse vectors', 'progress': 25}})}\n\n"
                     await asyncio.sleep(0)
-                    articles = vectorize_and_store(articles)
+                    # Vectorize & Store only the new live results
+                    vectorize_and_store(live_articles)
                 else:
-                    articles = query_local_database(query)
                     is_offline_cache = True
             except Exception as e:
                 print(f"Streaming fetch error: {e}")
@@ -76,7 +88,7 @@ async def stream_search_pipeline(query: str, algorithm: str, k: Optional[int], d
         yield f"data: {json.dumps({'event': 'stage', 'data': {'stage': '✨ Generating AI narrative synthesis', 'progress': 75}})}\n\n"
         await asyncio.sleep(0)
 
-        from models.metrics import compute_article_distances_from_center, compute_narrative_diversity_score
+        from models.metrics import compute_article_distances_from_center, compute_narrative_diversity_score, compute_clustering_eval_metrics
         article_distances = compute_article_distances_from_center(embeddings, np.array(labels))
         
         results = []
@@ -109,7 +121,6 @@ async def stream_search_pipeline(query: str, algorithm: str, k: Optional[int], d
             
         target_clusters = [cid for cid in cluster_texts if cid != -1]
         summaries, used_local_fallback = _generate_narrative_summaries(cluster_texts, client, target_clusters)
-        from models.metrics import compute_narrative_diversity_score, compute_clustering_eval_metrics
         nds_scores = compute_narrative_diversity_score(embeddings, np.array(labels))
         eval_metrics = compute_clustering_eval_metrics(embeddings, np.array(labels), nds_scores)
         

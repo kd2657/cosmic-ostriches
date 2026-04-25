@@ -132,34 +132,20 @@ def fetch_vectors(article_ids: List[str]):
     """Fetch stored embeddings directly from ChromaDB."""
     return collection.get(ids=article_ids, include=["embeddings", "metadatas"])
 
-def query_local_database(query_text: str, n_results: int = 50, category: Optional[str] = None) -> List[Dict[str, Any]]:
+def query_local_database(query_text: str, n_results: int = 50) -> List[Dict[str, Any]]:
     """
     Fallback method: Embeds the search query and searches the local ChromaDB 
     for the semantically closest existing articles when the API fails.
-    Supports topical filtering via metadata.
     """
     if collection.count() == 0:
         return []
         
     query_embedding = _get_model().encode([query_text]).tolist()
     
-    where = None
-    if category and category != "all":
-        # Map the frontend ID to likely stored category labels
-        cat_map = {
-            "politics": "Politics", 
-            "business": "Business", 
-            "technology": "Technology", 
-            "sports/entertainment": "Sports"
-        }
-        target = cat_map.get(category, category.capitalize())
-        where = {"category": target}
-    
     # Query ChromaDB (returns Dict of lists)
     results = collection.query(
         query_embeddings=query_embedding,
-        n_results=min(n_results, collection.count()),
-        where=where
+        n_results=min(n_results, collection.count())
     )
     
     articles = []
@@ -178,7 +164,7 @@ def query_local_database(query_text: str, n_results: int = 50, category: Optiona
                 "body": meta.get("body", ""),
                 "category": meta.get("category", "General"),
                 "publish_date": meta.get("publish_date", ""),
-                "embed_text": f"{meta.get('title', '')}. {meta.get('description', '')}"
+                "embed_text": f"{meta.get('title', '')}. {meta.get('body', '') or meta.get('description', '')}"
             })
             
     return articles

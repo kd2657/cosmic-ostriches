@@ -88,6 +88,13 @@ export default function ArticlePage() {
 
   const handleBack = () => {
     const urlParams = new URLSearchParams(searchParams.toString());
+    const from = searchParams.get("from");
+
+    if (from === "search") {
+      router.back();
+      return;
+    }
+
     router.push(`/cluster?${urlParams.toString()}`);
   };
 
