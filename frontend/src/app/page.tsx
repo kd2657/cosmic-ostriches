@@ -426,7 +426,7 @@ export default function Home() {
 
       <div className={`z-10 w-full max-w-3xl text-center space-y-8 transition-all duration-500 ${articles.length > 0 || activeTab === 'gradient' || activeTab === 'global' || activeTab === 'recommended' ? 'mt-0' : 'mt-[20vh]'}`}>
         <div className="flex justify-center">
-          <h1 className="text-6xl md:text-8xl lg:text-[7rem] font-extrabold tracking-tighter text-white mb-6 relative group inline-block whitespace-nowrap">
+          <h1 className="text-6xl md:text-8xl lg:text-[8rem] font-extrabold tracking-tighter text-white mb-6 relative group inline-block whitespace-nowrap">
             The Local{" "}
             <span className="relative inline-block text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-500 to-purple-500 transition-all duration-700 ease-out group-hover:drop-shadow-[0_0_35px_rgba(99,102,241,0.8)] group-hover:scale-[0.96] group-hover:translate-y-1">
               Minima
