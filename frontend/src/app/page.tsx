@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, BarChart2, Compass, Layers, Database, WifiOff, Globe, Link as LinkIcon, BookOpenText, X, ExternalLink } from "lucide-react";
+import { Search, Loader2, BarChart2, Compass, Layers, Database, WifiOff, Globe, Link as LinkIcon, BookOpenText, X, ExternalLink, ThumbsUp, ThumbsDown } from "lucide-react";
 import DailyGradient from "@/components/DailyGradient";
 import GlobalMaxima from "@/components/GlobalMaxima";
 import SystemSplash from "@/components/SystemSplash";
@@ -230,6 +230,8 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [articles, setArticles] = useState<Article[]>([]);
+  const [recommended, setRecommended] = useState<Article[]>([]);
+  const [votes, setVotes] = useState<Record<string, "up" | "down" | null>>({});
   const [searchedQuery, setSearchedQuery] = useState("");
   const [isOfflineCache, setIsOfflineCache] = useState(false);
   const [backendReady, setBackendReady] = useState(false);
@@ -291,6 +293,8 @@ export default function Home() {
       setLoading(false);
     }
   };
+  const handleVote = async (articleId: string, vote: "up" | "down") => {
+    let nextVote: "up" | "down" | null = vote;
 
   useEffect(() => {
     if (!articleModalOpen) return;
@@ -338,6 +342,57 @@ export default function Home() {
     setArticleModalOpen(false);
   };
 
+  const handleVote = async (articleId: string, vote: "up" | "down") => {
+    let nextVote: "up" | "down" | null = vote;
+
+    setVotes(prev => {
+      const current = prev[articleId];
+
+      if (current === vote) {
+        nextVote = null; // remove vote
+      }
+
+      return { ...prev, [articleId]: nextVote };
+    });
+
+    try {
+      await fetch("http://localhost:8000/api/vote", {
+        credentials: "include",
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          article_id: articleId,
+          vote: nextVote
+        })
+      });
+
+      fetchRecommendations();
+    } catch (err) {
+      console.error("Vote failed", err);
+    }
+  };
+
+  const fetchRecommendations = async () => {
+    try {
+      const res = await fetch("http://localhost:8000/api/recommend", {
+        method: "GET",
+        credentials: "include"
+      });
+
+      if (!res.ok) return;
+
+      const json = await res.json();
+      setRecommended(json.articles || []);
+    } catch (err) {
+      console.error("Recommendation fetch failed", err);
+    }
+  };
+
+  useEffect(() => {
+    if (backendReady) {
+      fetchRecommendations();
+    }
+  }, [backendReady]);
   return (
     <div className="min-h-screen bg-neutral-950 flex flex-col items-center py-20 px-4 relative overflow-hidden">
       {showBoot && (
@@ -449,8 +504,11 @@ export default function Home() {
               disabled={loading || !query.trim() || !backendReady}
               className="absolute right-2 px-6 py-2 bg-white text-black font-semibold rounded-xl hover:bg-neutral-200 transition-colors disabled:opacity-50 flex items-center gap-2 cursor-pointer"
             >
-              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 
-               !backendReady ? <Loader2 className="w-5 h-5 animate-spin" /> : "Search"}
+                {loading ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                "Search"
+              )}
             </button>
           </div>
         </form>
@@ -511,11 +569,71 @@ export default function Home() {
                           rel="noreferrer" 
                           className="flex items-center gap-1 text-blue-400 hover:text-blue-300 bg-blue-900/10 px-3 py-1 rounded-full transition-colors text-xs font-semibold"
                         >
-                           <LinkIcon className="w-3 h-3" /> Original Link
+                           <LinkIcon className="w-3 h-3" /> Read
                         </a>
                       )}
+
+                      <button
+                        onClick={() => handleVote(a.id, "up")}
+                        className={`p-2 rounded-lg transition ${
+                          votes[a.id] === "up"
+                            ? "bg-emerald-600 text-white shadow-lg"
+                            : "bg-emerald-900/20 hover:bg-emerald-800/40 text-emerald-400"
+                        }`}
+                      >
+                        <ThumbsUp className="w-4 h-4" />
+                      </button>
+
+                      <button
+                        onClick={() => handleVote(a.id, "down")}
+                        className={`p-2 rounded-lg transition ${
+                          votes[a.id] === "down"
+                            ? "bg-red-600 text-white shadow-lg"
+                            : "bg-red-900/20 hover:bg-red-800/40 text-red-400"
+                        }`}
+                      >
+                        <ThumbsDown className="w-4 h-4" />
+                      </button>
                    </div>
                 </div>
+
+                <div className="flex items-center gap-2">
+                  {a.url && (
+                    <a 
+                      href={a.url} 
+                      target="_blank" 
+                      rel="noreferrer" 
+                      className="flex items-center gap-1 text-blue-400 hover:text-blue-300 bg-blue-900/10 px-3 py-1 rounded-full transition-colors text-xs font-semibold"
+                    >
+                      <LinkIcon className="w-3 h-3" /> Read
+                    </a>
+                  )}
+
+                  {/* 👍 UPVOTE */}
+                  <button
+                    onClick={() => handleVote(a.id, "up")}
+                    className={`p-2 rounded-lg transition ${
+                      votes[a.id] === "up"
+                        ? "bg-emerald-600 text-white shadow-lg"
+                        : "bg-emerald-900/20 hover:bg-emerald-800/40 text-emerald-400"
+                    }`}
+                  >
+                    <ThumbsUp className="w-4 h-4" />
+                  </button>
+
+                  {/* 👎 DOWNVOTE */}
+                <button
+                  onClick={() => handleVote(a.id, "down")}
+                  className={`p-2 rounded-lg transition ${
+                    votes[a.id] === "down"
+                      ? "bg-red-600 text-white shadow-lg"
+                      : "bg-red-900/20 hover:bg-red-800/40 text-red-400"
+                  }`}
+                >
+                  <ThumbsDown className="w-4 h-4" />
+                </button>
+                </div>
+              </div>
                 {a.sentiment && (
                   <div className="mt-4 pt-3 border-t border-neutral-800 flex items-center justify-between gap-3">
                     <span
@@ -533,7 +651,74 @@ export default function Home() {
           </div>
         </div>
       )}
+      <div className="z-10 w-full max-w-5xl mx-auto mt-16 space-y-4 pb-20 animate-in fade-in duration-500">
+        <h2 className="text-2xl font-bold text-white mb-6 border-b border-neutral-800 pb-2 flex justify-between items-end">
+          <span>Recommended For You</span>
+          <span className="text-sm font-normal text-neutral-500">
+            {recommended.length} Results
+          </span>
+        </h2>
 
+        {recommended.length === 0 ? (
+          <p className="text-neutral-500 text-sm">No recommended articles</p>
+        ) : (
+          <div className="grid gap-4">
+            {recommended.map((a, i) => (
+              <div
+                key={`rec-${i}`}
+                className="bg-neutral-900/50 border border-neutral-800 rounded-xl p-5 hover:bg-neutral-800/80 transition-colors backdrop-blur-md"
+              >
+                <h3 className="text-lg font-semibold text-neutral-100 mb-2">
+                  {a.title}
+                </h3>
+
+                <p className="text-neutral-400 text-sm mb-3 line-clamp-3">
+                  {(a.body || "").slice(0, 250)}...
+                </p>
+
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-neutral-500">{a.source}</span>
+
+                  <div className="flex items-center gap-2">
+                    {a.url && (
+                      <a
+                        href={a.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-blue-400 hover:text-blue-300 text-xs"
+                      >
+                        Read
+                      </a>
+                    )}
+
+                    <button
+                      onClick={() => handleVote(a.id, "up")}
+                      className={`p-2 rounded-lg transition ${
+                        votes[a.id] === "up"
+                          ? "bg-emerald-600 text-white shadow-lg"
+                          : "bg-emerald-900/20 hover:bg-emerald-800/40 text-emerald-400"
+                      }`}
+                    >
+                      <ThumbsUp className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      onClick={() => handleVote(a.id, "down")}
+                      className={`p-2 rounded-lg transition ${
+                        votes[a.id] === "down"
+                          ? "bg-red-600 text-white shadow-lg"
+                          : "bg-red-900/20 hover:bg-red-800/40 text-red-400"
+                      }`}
+                    >
+                      <ThumbsDown className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
       {activeTab === "gradient" && <DailyGradient localMode={localMode} />}
       
       {activeTab === "global" && (

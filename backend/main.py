@@ -3,7 +3,10 @@ import sys
 
 os.environ["KMP_WARNINGS"] = "0"
 os.environ["OMP_WARNINGS"] = "0"
+from dotenv import load_dotenv
+import os
 
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 if sys.platform != "win32":
     import warnings
     warnings.filterwarnings("ignore", category=UserWarning, module="multiprocessing.resource_tracker")
@@ -19,11 +22,14 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
-from api import fetch_news, fetch_daily_gradient
+from api import fetch_news, fetch_daily_gradient as fetch_daily_articles
 from ml import vectorize_and_store, process_batch_cluster, query_local_database, compute_similarity_scores, process_daily_gradient, get_article_by_id, compute_global_divergence, model_manager
 from sentiment import SentimentClassifier
 from cluster_stream import stream_search_pipeline
 from fastapi.responses import StreamingResponse
+from fastapi import Request, Response
+from session import get_session_id, record_vote, get_user_articles
+from recommender import rank_articles_for_user
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -203,7 +209,7 @@ def get_daily_gradient(force_local: bool = False):
             # We can use "news" as a generic query to pull the most recent / general articles.
             articles = query_local_database("news", n_results=100)
         else:
-            articles = fetch_daily_gradient(page_size=100)
+            articles = fetch_daily_articles(page_size=100)
             if articles:
                 articles = vectorize_and_store(articles)
                 
@@ -291,3 +297,50 @@ def fetch_single_article(article_id: str):
         raise HTTPException(status_code=404, detail="Article not found")
     attach_article_sentiment([data])
     return {"status": "success", "article": data}
+@app.post("/api/vote")
+def vote(payload: dict, request: Request, response: Response):
+    article_id = payload.get("article_id")
+    vote_type = payload.get("vote")
+
+    if not article_id or vote_type not in ("up", "down"):
+        raise HTTPException(status_code=400, detail="Invalid input")
+
+    session_id = get_session_id(request, response)
+    print("SESSION (vote):", session_id)
+
+    record_vote(session_id, article_id, vote_type)
+
+    return {"status": "ok"}
+@app.get("/api/recommend")
+def recommend(request: Request, response: Response):
+    session_id = get_session_id(request, response)
+    print("SESSION (recommend):", session_id)
+
+    liked, disliked = get_user_articles(session_id)
+
+    # 🔥 Bypass cache so votes immediately affect recommendations
+    articles = fetch_daily_articles.__wrapped__(page_size=100)
+
+    if articles:
+        articles = vectorize_and_store(articles)
+
+    articles = attach_article_sentiment(articles)
+
+    # 🧠 Cold start fallback (no votes yet)
+    if not liked:
+        return {
+            "status": "success",
+            "articles": articles[:20]
+        }
+
+    ranked = rank_articles_for_user(
+        articles=articles,
+        liked_articles=liked,
+        disliked_articles=disliked,
+        use_sentiment=True
+    )
+
+    return {
+        "status": "success",
+        "articles": ranked[:20]
+    }

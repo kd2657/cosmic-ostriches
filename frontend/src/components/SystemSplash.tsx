@@ -16,7 +16,7 @@ export default function SystemSplash({ onReady }: { onReady: () => void }) {
   const [displayPct, setDisplayPct] = useState(5);
   const [fadeOut, setFadeOut] = useState(false);
   const [dots, setDots] = useState("");
-
+const [completed, setCompleted] = useState(false);
   // Simple dots animation for the loading text
   useEffect(() => {
     const interval = setInterval(() => {
@@ -38,7 +38,9 @@ export default function SystemSplash({ onReady }: { onReady: () => void }) {
         if (aborted) return;
         setStatus(data);
 
-        if (data.ready) {
+        if (data.ready && !completed) {
+          setCompleted(true);
+
           // Finish line
           setDisplayPct(100);
           setTimeout(() => setFadeOut(true), 600);
@@ -56,7 +58,7 @@ export default function SystemSplash({ onReady }: { onReady: () => void }) {
       aborted = true;
       clearInterval(interval);
     };
-  }, [onReady]);
+}, [onReady, completed]);
 
   // Smooth percentage interpolation
   useEffect(() => {

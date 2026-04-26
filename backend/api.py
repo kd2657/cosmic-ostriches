@@ -141,6 +141,7 @@ def fetch_rss_news(query: str, max_articles: int = 50) -> List[Dict[str, Any]]:
 
     return articles
 
+@lru_cache(maxsize=32)
 def fetch_news(query: str, page_size: int = 50) -> List[Dict[str, Any]]:
     """
     Primary news pipeline: NewsAPI.ai -> (RSS + Local DB Fallback).

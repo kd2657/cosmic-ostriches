@@ -1,0 +1,8 @@
+cd backend
+Set-ExecutionPolicy -Scope Process Bypass
+.venv\Scripts\Activate.ps1
+uvicorn main:app --reload
+
+cd frontend
+Set-ExecutionPolicy -Scope Process Bypass
+npm run dev
