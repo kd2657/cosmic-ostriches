@@ -58,14 +58,14 @@ def _get_or_create_session(session_id: str) -> Dict[str, Set[str]]:
 # VOTING LOGIC
 # -------------------------
 
-def record_vote(session_id: str, article_id: str, vote: str) -> None:
+def record_vote(session_id: str, article_id: str, vote: Optional[str]) -> None:
     """
     Record an upvote or downvote for an article.
 
     vote: "up" or "down"
     """
-    if vote not in ("up", "down"):
-        raise ValueError("vote must be 'up' or 'down'")
+    if vote not in ("up", "down", None):
+        raise ValueError("vote must be 'up', 'down', or None")
 
     session = _get_or_create_session(session_id)
 
@@ -78,8 +78,14 @@ def record_vote(session_id: str, article_id: str, vote: str) -> None:
             session["disliked"].add(article_id)
             session["liked"].discard(article_id)
 
+        elif vote is None:
+            # 🔥 THIS IS THE MISSING PIECE
+            session["liked"].discard(article_id)
+            session["disliked"].discard(article_id)
+
 
 def get_session_votes(session_id: str) -> Dict[str, List[str]]:
+
     """
     Returns current session votes (for debugging or UI state).
     """

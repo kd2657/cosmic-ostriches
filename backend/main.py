@@ -306,7 +306,6 @@ def vote(payload: dict, request: Request, response: Response):
         raise HTTPException(status_code=400, detail="Invalid input")
 
     session_id = get_session_id(request, response)
-    print("SESSION (vote):", session_id)
 
     record_vote(session_id, article_id, vote_type)
 
@@ -314,27 +313,62 @@ def vote(payload: dict, request: Request, response: Response):
 @app.get("/api/recommend")
 def recommend(request: Request, response: Response):
     session_id = get_session_id(request, response)
-    print("SESSION (recommend):", session_id)
 
     liked, disliked = get_user_articles(session_id)
 
-    # 🔥 Bypass cache so votes immediately affect recommendations
-    articles = fetch_daily_articles.__wrapped__(page_size=100)
+    # -------------------------
+    # HYBRID CANDIDATE POOL
+    # -------------------------
 
-    if articles:
-        articles = vectorize_and_store(articles)
+    RECENT_K = 50
+    SEMANTIC_K = 50
 
-    articles = attach_article_sentiment(articles)
+    # 1. Fetch recent articles (recency signal)
+    recent_articles = fetch_daily_articles.__wrapped__(page_size=RECENT_K)
+    if recent_articles:
+        recent_articles = vectorize_and_store(recent_articles)
+    else:
+        recent_articles = []
 
-    # 🧠 Cold start fallback (no votes yet)
+    # 2. Build semantic query from user preferences
+    if liked:
+        profile_query = " ".join([
+            (a.get("title", "") + " " + (a.get("description") or ""))[:200]
+            for a in liked[:5]
+        ])
+    else:
+        profile_query = "news"
+
+    # 3. Retrieve semantically similar articles from vector DB
+    semantic_articles = query_local_database(profile_query, n_results=SEMANTIC_K)
+
+    # 4. Merge + deduplicate
+    seen_ids = set()
+    combined_articles = []
+
+    for article in recent_articles + semantic_articles:
+        article_id = article.get("id")
+        if article_id and article_id not in seen_ids:
+            seen_ids.add(article_id)
+            combined_articles.append(article)
+
+    # 5. Attach sentiment ONCE
+    combined_articles = attach_article_sentiment(combined_articles)
+
+    # -------------------------
+    # COLD START (no user data)
+    # -------------------------
     if not liked:
         return {
             "status": "success",
-            "articles": articles[:20]
+            "articles": combined_articles[:20]
         }
 
+    # -------------------------
+    # PERSONALIZED RANKING
+    # -------------------------
     ranked = rank_articles_for_user(
-        articles=articles,
+        articles=combined_articles,
         liked_articles=liked,
         disliked_articles=disliked,
         use_sentiment=True

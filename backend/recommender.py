@@ -52,6 +52,8 @@ class ArticleRecommender:
         else:
             self.profile_vector = np.mean(liked_embs, axis=0)
 
+
+
     # -------------------------
     # SCORING
     # -------------------------
@@ -90,35 +92,32 @@ class ArticleRecommender:
         use_sentiment: bool = False,
         sentiment_weight: float = 0.2,
     ) -> List[Dict[str, Any]]:
-        """
-        Rank articles by enjoyment score.
-
-        Optionally blends sentiment:
-            final_score = (1 - w) * similarity + w * sentiment
-        """
 
         if not articles:
             return []
 
         scores = self.score_batch(articles)
 
+
         ranked = []
         for article, sim_score in zip(articles, scores):
+            sentiment = article.get("sentiment", {})
+            polarity = sentiment.get("polarity", 0.0)
+
             final_score = sim_score
-
             if use_sentiment:
-                sentiment = article.get("sentiment", {})
-                polarity = sentiment.get("polarity", 0.0)
-
                 final_score = (1 - sentiment_weight) * sim_score + sentiment_weight * polarity
+
 
             ranked.append({
                 **article,
                 "enjoyment_score": round(float(final_score), 6)
             })
 
-        return sorted(ranked, key=lambda x: x["enjoyment_score"], reverse=True)
+        ranked_sorted = sorted(ranked, key=lambda x: x["enjoyment_score"], reverse=True)
 
+
+        return ranked_sorted
 
 # -------------------------
 # HELPER FUNCTIONS

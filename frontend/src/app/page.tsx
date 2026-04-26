@@ -236,7 +236,7 @@ export default function Home() {
   const [isOfflineCache, setIsOfflineCache] = useState(false);
   const [backendReady, setBackendReady] = useState(false);
   const [showBoot, setShowBoot] = useState(true);
-  const [activeTab, setActiveTab] = useState<"search" | "gradient" | "global">("search");
+  const [activeTab, setActiveTab] = useState<"search" | "gradient" | "global" | "recommended">("search");
   const [localMode, setLocalMode] = useState(false);
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
   const [articleModalOpen, setArticleModalOpen] = useState(false);
@@ -293,21 +293,43 @@ export default function Home() {
       setLoading(false);
     }
   };
+
   const handleVote = async (articleId: string, vote: "up" | "down") => {
     let nextVote: "up" | "down" | null = vote;
 
+    setVotes(prev => {
+      const current = prev[articleId];
+      if (current === vote) {
+        nextVote = null;
+      }
+      return { ...prev, [articleId]: nextVote };
+    });
+
+    try {
+      await fetch("http://localhost:8000/api/vote", {
+        credentials: "include",
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          article_id: articleId,
+          vote: nextVote
+        })
+      });
+      fetchRecommendations();
+    } catch (err) {
+      console.error("Vote failed", err);
+    }
+  };
+
   useEffect(() => {
     if (!articleModalOpen) return;
-
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setArticleModalOpen(false);
       }
     };
-
     document.body.style.overflow = "hidden";
     window.addEventListener("keydown", handleKeyDown);
-
     return () => {
       document.body.style.overflow = "";
       window.removeEventListener("keydown", handleKeyDown);
@@ -342,45 +364,13 @@ export default function Home() {
     setArticleModalOpen(false);
   };
 
-  const handleVote = async (articleId: string, vote: "up" | "down") => {
-    let nextVote: "up" | "down" | null = vote;
-
-    setVotes(prev => {
-      const current = prev[articleId];
-
-      if (current === vote) {
-        nextVote = null; // remove vote
-      }
-
-      return { ...prev, [articleId]: nextVote };
-    });
-
-    try {
-      await fetch("http://localhost:8000/api/vote", {
-        credentials: "include",
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          article_id: articleId,
-          vote: nextVote
-        })
-      });
-
-      fetchRecommendations();
-    } catch (err) {
-      console.error("Vote failed", err);
-    }
-  };
-
   const fetchRecommendations = async () => {
     try {
       const res = await fetch("http://localhost:8000/api/recommend", {
         method: "GET",
         credentials: "include"
       });
-
       if (!res.ok) return;
-
       const json = await res.json();
       setRecommended(json.articles || []);
     } catch (err) {
@@ -393,6 +383,7 @@ export default function Home() {
       fetchRecommendations();
     }
   }, [backendReady]);
+
   return (
     <div className="min-h-screen bg-neutral-950 flex flex-col items-center py-20 px-4 relative overflow-hidden">
       {showBoot && (
@@ -438,7 +429,7 @@ export default function Home() {
         </div>
       )}
 
-      <div className={`z-10 w-full max-w-3xl text-center space-y-8 transition-all duration-500 ${articles.length > 0 || activeTab === 'gradient' || activeTab === 'global' ? 'mt-0' : 'mt-[20vh]'}`}>
+      <div className={`z-10 w-full max-w-3xl text-center space-y-8 transition-all duration-500 ${articles.length > 0 || activeTab === 'gradient' || activeTab === 'global' || activeTab === 'recommended' ? 'mt-0' : 'mt-[20vh]'}`}>
         <h1 className="text-6xl md:text-8xl lg:text-[7rem] font-extrabold tracking-tighter text-white mb-6 relative group inline-block whitespace-nowrap">
           The Local{" "}
           <span className="relative inline-block text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-500 to-purple-500 transition-all duration-700 ease-out group-hover:drop-shadow-[0_0_35px_rgba(99,102,241,0.8)] group-hover:scale-[0.96] group-hover:translate-y-1">
@@ -486,6 +477,22 @@ export default function Home() {
            >
               {backendReady ? <Globe className="w-5 h-5" /> : <Loader2 className="w-5 h-5 animate-spin" />} Global Maxima
            </button>
+          <button 
+            onClick={() => {
+              setActiveTab("recommended");
+              setQuery("");
+              setSearchedQuery("");
+              setArticles([]);
+            }}
+            disabled={!backendReady}
+            className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${
+              activeTab === 'recommended'
+                ? 'bg-emerald-600 text-white shadow-[0_0_20px_rgba(16,185,129,0.4)] border-emerald-500'
+                : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'
+            }`}
+          >
+            {backendReady ? <ThumbsUp className="w-5 h-5" /> : <Loader2 className="w-5 h-5 animate-spin" />} Recommended
+          </button>
         </div>
 
         {(activeTab === "search" || activeTab === "global") && (
@@ -569,7 +576,7 @@ export default function Home() {
                           rel="noreferrer" 
                           className="flex items-center gap-1 text-blue-400 hover:text-blue-300 bg-blue-900/10 px-3 py-1 rounded-full transition-colors text-xs font-semibold"
                         >
-                           <LinkIcon className="w-3 h-3" /> Read
+                           <LinkIcon className="w-3 h-3" /> Original Link
                         </a>
                       )}
 
@@ -597,43 +604,6 @@ export default function Home() {
                    </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  {a.url && (
-                    <a 
-                      href={a.url} 
-                      target="_blank" 
-                      rel="noreferrer" 
-                      className="flex items-center gap-1 text-blue-400 hover:text-blue-300 bg-blue-900/10 px-3 py-1 rounded-full transition-colors text-xs font-semibold"
-                    >
-                      <LinkIcon className="w-3 h-3" /> Read
-                    </a>
-                  )}
-
-                  {/* 👍 UPVOTE */}
-                  <button
-                    onClick={() => handleVote(a.id, "up")}
-                    className={`p-2 rounded-lg transition ${
-                      votes[a.id] === "up"
-                        ? "bg-emerald-600 text-white shadow-lg"
-                        : "bg-emerald-900/20 hover:bg-emerald-800/40 text-emerald-400"
-                    }`}
-                  >
-                    <ThumbsUp className="w-4 h-4" />
-                  </button>
-
-                  {/* 👎 DOWNVOTE */}
-                <button
-                  onClick={() => handleVote(a.id, "down")}
-                  className={`p-2 rounded-lg transition ${
-                    votes[a.id] === "down"
-                      ? "bg-red-600 text-white shadow-lg"
-                      : "bg-red-900/20 hover:bg-red-800/40 text-red-400"
-                  }`}
-                >
-                  <ThumbsDown className="w-4 h-4" />
-                </button>
-                </div>
-              </div>
                 {a.sentiment && (
                   <div className="mt-4 pt-3 border-t border-neutral-800 flex items-center justify-between gap-3">
                     <span
@@ -644,50 +614,12 @@ export default function Home() {
                     <span className="text-xs text-neutral-400">
                       Sentiment confidence: {(a.sentiment.confidence * 100).toFixed(1)}%
                     </span>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      <div className="z-10 w-full max-w-5xl mx-auto mt-16 space-y-4 pb-20 animate-in fade-in duration-500">
-        <h2 className="text-2xl font-bold text-white mb-6 border-b border-neutral-800 pb-2 flex justify-between items-end">
-          <span>Recommended For You</span>
-          <span className="text-sm font-normal text-neutral-500">
-            {recommended.length} Results
-          </span>
-        </h2>
-
-        {recommended.length === 0 ? (
-          <p className="text-neutral-500 text-sm">No recommended articles</p>
-        ) : (
-          <div className="grid gap-4">
-            {recommended.map((a, i) => (
-              <div
-                key={`rec-${i}`}
-                className="bg-neutral-900/50 border border-neutral-800 rounded-xl p-5 hover:bg-neutral-800/80 transition-colors backdrop-blur-md"
-              >
-                <h3 className="text-lg font-semibold text-neutral-100 mb-2">
-                  {a.title}
-                </h3>
-
-                <p className="text-neutral-400 text-sm mb-3 line-clamp-3">
-                  {(a.body || "").slice(0, 250)}...
-                </p>
-
-                <div className="flex justify-between items-center">
-                  <span className="text-xs text-neutral-500">{a.source}</span>
-
-                  <div className="flex items-center gap-2">
-                    {a.url && (
-                      <a
-                        href={a.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-blue-400 hover:text-blue-300 text-xs"
+                        href={a.url} 
+                        target="_blank" 
+                        rel="noreferrer" 
+                        className="flex items-center gap-1 text-blue-400 hover:text-blue-300 bg-blue-900/10 px-3 py-1 rounded-full transition-colors text-xs font-semibold"
                       >
-                        Read
+                        <LinkIcon className="w-3 h-3" /> Read
                       </a>
                     )}
 
@@ -717,8 +649,79 @@ export default function Home() {
               </div>
             ))}
           </div>
-        )}
+        </div>
+      )}
+
+      {activeTab === "recommended" && (
+        <div className="z-10 w-full max-w-5xl mx-auto mt-12 space-y-4 pb-20 animate-in fade-in duration-500">
+    <h2 className="text-2xl font-bold text-white mb-6 border-b border-neutral-800 pb-2 flex justify-between items-end">
+      <span>Recommended For You</span>
+      <span className="text-sm font-normal text-neutral-500">
+        {recommended.length} Results
+      </span>
+    </h2>
+
+    {recommended.length === 0 ? (
+      <p className="text-neutral-500 text-sm">No recommended articles</p>
+    ) : (
+      <div className="grid gap-4">
+        {recommended.map((a, i) => (
+          <div
+            key={`rec-${i}`}
+            className="bg-neutral-900/50 border border-neutral-800 rounded-xl p-5 hover:bg-neutral-800/80 transition-colors backdrop-blur-md"
+          >
+            <h3 className="text-lg font-semibold text-neutral-100 mb-2">
+              {a.title}
+            </h3>
+
+            <p className="text-neutral-400 text-sm mb-3 line-clamp-3">
+              {(a.body || "").slice(0, 250)}...
+            </p>
+
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-neutral-500">{a.source}</span>
+
+              <div className="flex items-center gap-2">
+                {a.url && (
+                  <a
+                    href={a.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-blue-400 hover:text-blue-300 text-xs"
+                  >
+                    Read
+                  </a>
+                )}
+
+                <button
+                  onClick={() => handleVote(a.id, "up")}
+                  className={`p-2 rounded-lg transition ${
+                    votes[a.id] === "up"
+                      ? "bg-emerald-600 text-white shadow-lg"
+                      : "bg-emerald-900/20 hover:bg-emerald-800/40 text-emerald-400"
+                  }`}
+                >
+                  <ThumbsUp className="w-4 h-4" />
+                </button>
+
+                <button
+                  onClick={() => handleVote(a.id, "down")}
+                  className={`p-2 rounded-lg transition ${
+                    votes[a.id] === "down"
+                      ? "bg-red-600 text-white shadow-lg"
+                      : "bg-red-900/20 hover:bg-red-800/40 text-red-400"
+                  }`}
+                >
+                  <ThumbsDown className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
+    )}
+  </div>
+)}
       {activeTab === "gradient" && <DailyGradient localMode={localMode} />}
       
       {activeTab === "global" && (
@@ -829,5 +832,6 @@ export default function Home() {
         </div>
       )}
     </div>
+    
   );
 }
