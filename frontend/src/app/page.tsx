@@ -425,73 +425,55 @@ export default function Home() {
       )}
 
       <div className={`z-10 w-full max-w-3xl text-center space-y-8 transition-all duration-500 ${articles.length > 0 || activeTab === 'gradient' || activeTab === 'global' || activeTab === 'recommended' ? 'mt-0' : 'mt-[20vh]'}`}>
-        <h1 className="text-6xl md:text-8xl lg:text-[7rem] font-extrabold tracking-tighter text-white mb-6 relative group inline-block whitespace-nowrap">
-          The Local{" "}
-          <span className="relative inline-block text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-500 to-purple-500 transition-all duration-700 ease-out group-hover:drop-shadow-[0_0_35px_rgba(99,102,241,0.8)] group-hover:scale-[0.96] group-hover:translate-y-1">
-            Minima
-          </span>
-        </h1>
+        <div className="flex justify-center">
+          <h1 className="text-6xl md:text-8xl lg:text-[7rem] font-extrabold tracking-tighter text-white mb-6 relative group inline-block whitespace-nowrap">
+            The Local{" "}
+            <span className="relative inline-block text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-500 to-purple-500 transition-all duration-700 ease-out group-hover:drop-shadow-[0_0_35px_rgba(99,102,241,0.8)] group-hover:scale-[0.96] group-hover:translate-y-1">
+              Minima
+            </span>
+          </h1>
+        </div>
         {articles.length === 0 && activeTab === 'search' && !searchedQuery && (
           <p className="text-lg text-neutral-400 max-w-xl mx-auto">
             Enter a topic and uncover the narratives across today&apos;s news.
           </p>
         )}
 
-        <div className="flex sm:justify-center gap-2 sm:gap-4 mt-8 flex-nowrap overflow-x-auto pb-4 px-4 no-scrollbar slide-in-from-bottom-4 animate-in fade-in duration-500">
-           <button 
-              onClick={() => {
-                  setActiveTab("search");
-                  setQuery("");
-                  setSearchedQuery("");
-                  setArticles([]);
-              }} 
-              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 ${activeTab === 'search' ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}>
-              <Layers className="w-5 h-5" /> News Clusters
-           </button>
-           <button 
-              onClick={() => {
-                 setActiveTab("gradient");
-                 setQuery("");
-                 setSearchedQuery("");
-                 setArticles([]);
-              }} 
+        {/* Tab row — breaks out of max-w-3xl visually using full viewport width */}
+        <div className="flex justify-center slide-in-from-bottom-4 animate-in fade-in duration-500">
+          <div className="flex items-center gap-4 flex-nowrap">
+            <button
+              onClick={() => { setActiveTab("search"); setQuery(""); setSearchedQuery(""); setArticles([]); }}
+              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'search' ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
+            >
+              <Layers className="w-5 h-5 shrink-0" /> News Clusters
+            </button>
+            <button
+              onClick={() => { setActiveTab("gradient"); setQuery(""); setSearchedQuery(""); setArticles([]); }}
               disabled={!backendReady}
-              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${activeTab === 'gradient' ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
-           >
-              {backendReady ? <Compass className="w-5 h-5" /> : <Loader2 className="w-5 h-5 animate-spin" />} Daily Gradient
-           </button>
-           <button 
-              onClick={() => {
-                 setActiveTab("global");
-                 setQuery("");
-                 setSearchedQuery("");
-                 setArticles([]);
-              }}
+              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed ${activeTab === 'gradient' ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
+            >
+              {backendReady ? <Compass className="w-5 h-5 shrink-0" /> : <Loader2 className="w-5 h-5 shrink-0 animate-spin" />} Daily Gradient
+            </button>
+            <button
+              onClick={() => { setActiveTab("global"); setQuery(""); setSearchedQuery(""); setArticles([]); }}
               disabled={!backendReady}
-              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${activeTab === 'global' ? 'bg-indigo-600 text-white shadow-[0_0_20px_rgba(79,70,229,0.4)] border-indigo-500' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
-           >
-              {backendReady ? <Globe className="w-5 h-5" /> : <Loader2 className="w-5 h-5 animate-spin" />} Global Maxima
-           </button>
-          <button 
-            onClick={() => {
-              setActiveTab("recommended");
-              setQuery("");
-              setSearchedQuery("");
-              setArticles([]);
-            }}
-            disabled={!backendReady}
-            className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${
-              activeTab === 'recommended'
-                ? 'bg-emerald-600 text-white shadow-[0_0_20px_rgba(16,185,129,0.4)] border-emerald-500'
-                : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'
-            }`}
-          >
-            {backendReady ? <ThumbsUp className="w-5 h-5" /> : <Loader2 className="w-5 h-5 animate-spin" />} Recommended
-          </button>
+              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed ${activeTab === 'global' ? 'bg-indigo-600 text-white shadow-[0_0_20px_rgba(79,70,229,0.4)] border-indigo-500' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
+            >
+              {backendReady ? <Globe className="w-5 h-5 shrink-0" /> : <Loader2 className="w-5 h-5 shrink-0 animate-spin" />} Global Maxima
+            </button>
+            <button
+              onClick={() => { setActiveTab("recommended"); setQuery(""); setSearchedQuery(""); setArticles([]); }}
+              disabled={!backendReady}
+              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed ${activeTab === 'recommended' ? 'bg-emerald-600 text-white shadow-[0_0_20px_rgba(16,185,129,0.4)] border-emerald-500' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
+            >
+              {backendReady ? <ThumbsUp className="w-5 h-5 shrink-0" /> : <Loader2 className="w-5 h-5 shrink-0 animate-spin" />} Recommended
+            </button>
+          </div>
         </div>
 
         {(activeTab === "search" || activeTab === "global") && (
-          <form onSubmit={handleSearch} className="relative mt-8 w-full max-w-3xl mx-auto animate-in fade-in duration-500">
+          <form onSubmit={handleSearch} className="relative w-full max-w-3xl mx-auto animate-in fade-in duration-500">
             <div className="relative flex items-center">
             <input
               type="text"
