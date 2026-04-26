@@ -302,79 +302,68 @@ def vote(payload: dict, request: Request, response: Response):
     article_id = payload.get("article_id")
     vote_type = payload.get("vote")
 
-    if not article_id or vote_type not in ("up", "down"):
+    if not article_id or vote_type not in ("up", "down", None):
         raise HTTPException(status_code=400, detail="Invalid input")
 
     session_id = get_session_id(request, response)
-
     record_vote(session_id, article_id, vote_type)
 
     return {"status": "ok"}
-@app.get("/api/recommend")
-def recommend(request: Request, response: Response):
-    session_id = get_session_id(request, response)
 
-    liked, disliked = get_user_articles(session_id)
-
-    # -------------------------
-    # HYBRID CANDIDATE POOL
-    # -------------------------
-
+def _get_recommendation_candidates(liked_articles: list) -> list:
+    """Helper to fetch recent and semantic candidates for recommendations."""
     RECENT_K = 50
     SEMANTIC_K = 50
 
-    # 1. Fetch recent articles (recency signal)
-    recent_articles = fetch_daily_articles(page_size=RECENT_K)
-    if recent_articles:
-        recent_articles = vectorize_and_store(recent_articles)
-    else:
-        recent_articles = []
+    # 1. Fetch recent articles
+    recent = fetch_daily_articles(page_size=RECENT_K)
+    recent = vectorize_and_store(recent) if recent else []
 
-    # 2. Build semantic query from user preferences
-    if liked:
+    # 2. Build semantic query
+    if liked_articles:
         profile_query = " ".join([
             (a.get("title", "") + " " + (a.get("description") or ""))[:200]
-            for a in liked[:5]
+            for a in liked_articles[:5]
         ])
     else:
         profile_query = "news"
 
-    # 3. Retrieve semantically similar articles from vector DB
-    semantic_articles = query_local_database(profile_query, n_results=SEMANTIC_K)
+    # 3. Retrieve semantically similar articles
+    semantic = query_local_database(profile_query, n_results=SEMANTIC_K)
 
     # 4. Merge + deduplicate
     seen_ids = set()
-    combined_articles = []
+    combined = []
+    for article in recent + semantic:
+        aid = article.get("id")
+        if aid and aid not in seen_ids:
+            seen_ids.add(aid)
+            combined.append(article)
+    
+    return combined
 
-    for article in recent_articles + semantic_articles:
-        article_id = article.get("id")
-        if article_id and article_id not in seen_ids:
-            seen_ids.add(article_id)
-            combined_articles.append(article)
+@app.get("/api/recommend")
+def recommend(request: Request, response: Response):
+    session_id = get_session_id(request, response)
+    liked, disliked = get_user_articles(session_id)
 
-    # 5. Attach sentiment ONCE
-    combined_articles = attach_article_sentiment(combined_articles)
+    # 1. Fetch Candidates
+    candidates = _get_recommendation_candidates(liked)
+    if not candidates:
+        return {"status": "success", "articles": []}
 
-    # -------------------------
-    # COLD START (no user data)
-    # -------------------------
+    # 2. Attach sentiment in bulk
+    candidates = attach_article_sentiment(candidates)
+
+    # 3. Cold Start / Ranking
     if not liked:
-        return {
-            "status": "success",
-            "articles": combined_articles[:20]
-        }
+        return {"status": "success", "articles": candidates[:20]}
 
-    # -------------------------
-    # PERSONALIZED RANKING
-    # -------------------------
     ranked = rank_articles_for_user(
-        articles=combined_articles,
+        articles=candidates,
         liked_articles=liked,
         disliked_articles=disliked,
         use_sentiment=True
     )
 
-    return {
-        "status": "success",
-        "articles": ranked[:20]
-    }
+    return {"status": "success", "articles": ranked[:20]}

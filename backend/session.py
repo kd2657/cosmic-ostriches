@@ -7,7 +7,7 @@ from typing import Dict, Set, Tuple, List, Optional
 from fastapi import Request, Response
 
 # Import your existing function
-from ml import get_article_by_id
+from ml import get_article_by_id, get_articles_by_ids
 
 
 # -------------------------
@@ -108,20 +108,15 @@ def get_user_articles(session_id: str) -> Tuple[List[dict], List[dict]]:
     """
     session = _get_or_create_session(session_id)
 
-    liked_articles: List[dict] = []
-    disliked_articles: List[dict] = []
+    with _SESSION_LOCK:
+        liked_ids = list(session["liked"])
+        disliked_ids = list(session["disliked"])
 
-    for aid in session["liked"]:
-        article = get_article_by_id(aid)
-        if article:
-            liked_articles.append(_ensure_embed_text(article))
-
-    for aid in session["disliked"]:
-        article = get_article_by_id(aid)
-        if article:
-            disliked_articles.append(_ensure_embed_text(article))
+    liked_articles = [_ensure_embed_text(a) for a in get_articles_by_ids(liked_ids)]
+    disliked_articles = [_ensure_embed_text(a) for a in get_articles_by_ids(disliked_ids)]
 
     return liked_articles, disliked_articles
+
 
 
 def _ensure_embed_text(article: dict) -> dict:
