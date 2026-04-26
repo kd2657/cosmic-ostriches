@@ -89,8 +89,6 @@ class ArticleRecommender:
     def rank(
         self,
         articles: List[Dict[str, Any]],
-        use_sentiment: bool = False,
-        sentiment_weight: float = 0.2,
     ) -> List[Dict[str, Any]]:
 
         if not articles:
@@ -98,26 +96,17 @@ class ArticleRecommender:
 
         scores = self.score_batch(articles)
 
-
         ranked = []
         for article, sim_score in zip(articles, scores):
-            sentiment = article.get("sentiment", {})
-            polarity = sentiment.get("polarity", 0.0)
-
-            final_score = sim_score
-            if use_sentiment:
-                final_score = (1 - sentiment_weight) * sim_score + sentiment_weight * polarity
-
-
             ranked.append({
                 **article,
-                "enjoyment_score": round(float(final_score), 6)
+                "enjoyment_score": round(float(sim_score), 6)
             })
 
         ranked_sorted = sorted(ranked, key=lambda x: x["enjoyment_score"], reverse=True)
 
-
         return ranked_sorted
+
 
 # -------------------------
 # HELPER FUNCTIONS
@@ -127,7 +116,6 @@ def rank_articles_for_user(
     articles: List[Dict[str, Any]],
     liked_articles: List[Dict[str, Any]],
     disliked_articles: Optional[List[Dict[str, Any]]] = None,
-    use_sentiment: bool = False,
 ) -> List[Dict[str, Any]]:
     """
     Convenience wrapper for one-off ranking.
@@ -136,10 +124,8 @@ def rank_articles_for_user(
     recommender = ArticleRecommender()
     recommender.fit(liked_articles, disliked_articles)
 
-    return recommender.rank(
-        articles,
-        use_sentiment=use_sentiment
-    )
+    return recommender.rank(articles)
+
 
 
 def build_user_profile_vector(

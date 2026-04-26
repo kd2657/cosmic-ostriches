@@ -437,7 +437,7 @@ export default function Home() {
           </p>
         )}
 
-        <div className="flex justify-center gap-4 mt-8 flex-wrap slide-in-from-bottom-4 animate-in fade-in duration-500">
+        <div className="flex sm:justify-center gap-2 sm:gap-4 mt-8 flex-nowrap overflow-x-auto pb-4 px-4 no-scrollbar slide-in-from-bottom-4 animate-in fade-in duration-500">
            <button 
               onClick={() => {
                   setActiveTab("search");

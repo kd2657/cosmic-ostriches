@@ -352,18 +352,14 @@ def recommend(request: Request, response: Response):
     if not candidates:
         return {"status": "success", "articles": []}
 
-    # 2. Attach sentiment in bulk
-    candidates = attach_article_sentiment(candidates)
-
-    # 3. Cold Start / Ranking
+    # 2. Cold Start / Ranking (Sentiment removed as requested)
     if not liked:
         return {"status": "success", "articles": candidates[:20]}
 
     ranked = rank_articles_for_user(
         articles=candidates,
         liked_articles=liked,
-        disliked_articles=disliked,
-        use_sentiment=True
+        disliked_articles=disliked
     )
 
     return {"status": "success", "articles": ranked[:20]}
