@@ -30,7 +30,7 @@ def _fetch_full_body_text(url: str) -> str:
         # Remove script and style elements
         for script_or_style in soup(["script", "style", "nav", "footer", "header"]):
             script_or_style.decompose()
-
+        
         # Heuristic: Find all <p> tags and join them
         # Most major news sites wrap content in <p> tags
         paragraphs = soup.find_all("p")

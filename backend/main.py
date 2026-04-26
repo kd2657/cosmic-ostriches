@@ -324,7 +324,7 @@ def recommend(request: Request, response: Response):
     SEMANTIC_K = 50
 
     # 1. Fetch recent articles (recency signal)
-    recent_articles = fetch_daily_articles.__wrapped__(page_size=RECENT_K)
+    recent_articles = fetch_daily_articles(page_size=RECENT_K)
     if recent_articles:
         recent_articles = vectorize_and_store(recent_articles)
     else:
