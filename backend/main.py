@@ -1,12 +1,15 @@
 import os
 import sys
+from dotenv import load_dotenv
 
+# Suppress low-level library warnings (OpenMP/MKL)
 os.environ["KMP_WARNINGS"] = "0"
 os.environ["OMP_WARNINGS"] = "0"
-from dotenv import load_dotenv
-import os
 
+# Load environment variables
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+load_dotenv()
+
 if sys.platform != "win32":
     import warnings
     warnings.filterwarnings("ignore", category=UserWarning, module="multiprocessing.resource_tracker")
@@ -23,13 +26,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 from api import fetch_news, fetch_daily_gradient as fetch_daily_articles
-from ml import vectorize_and_store, process_batch_cluster, query_local_database, compute_similarity_scores, process_daily_gradient, get_article_by_id, compute_global_divergence, model_manager
+from ml import vectorize_and_store, process_batch_cluster, query_local_database, compute_similarity_scores, process_daily_gradient, get_article_by_id, compute_global_divergence, compute_source_divergence, model_manager
 from sentiment import SentimentClassifier
 from cluster_stream import stream_search_pipeline
 from fastapi.responses import StreamingResponse
 from fastapi import Request, Response
 from session import get_session_id, record_vote, get_user_articles
 from recommender import rank_articles_for_user
+from logger import log_request
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -95,6 +99,7 @@ def attach_article_sentiment(articles):
     return articles
 
 @app.post("/api/articles")
+@log_request
 def run_article_feed(req: ArticleRequest):
     try:
         is_offline_cache = req.force_local
@@ -138,6 +143,7 @@ def run_article_feed(req: ArticleRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/search")
+@log_request
 def run_search_pipeline(req: SearchRequest):
     try:
         # Step 1: Fetch from NewsAPI.org
@@ -181,6 +187,7 @@ def run_search_pipeline(req: SearchRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/search/stream")
+@log_request
 async def stream_search(req: SearchRequest):
     """
     Experimental SSE endpoint for narrative synthesis.
@@ -199,6 +206,7 @@ async def stream_search(req: SearchRequest):
     )
 
 @app.get("/api/daily-gradient")
+@log_request
 def get_daily_gradient(force_local: bool = False):
     try:
         articles = []
@@ -222,6 +230,7 @@ def get_daily_gradient(force_local: bool = False):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/global-analysis")
+@log_request
 def run_global_analysis(req: SearchRequest):
     try:
         is_offline_cache = req.force_local
@@ -291,6 +300,7 @@ def get_system_status():
     return model_manager.get_status()
 
 @app.get("/api/article/{article_id:path}")
+@log_request
 def fetch_single_article(article_id: str):
     data = get_article_by_id(article_id)
     if not data:
@@ -298,6 +308,7 @@ def fetch_single_article(article_id: str):
     attach_article_sentiment([data])
     return {"status": "success", "article": data}
 @app.post("/api/vote")
+@log_request
 def vote(payload: dict, request: Request, response: Response):
     article_id = payload.get("article_id")
     vote_type = payload.get("vote")
@@ -343,6 +354,7 @@ def _get_recommendation_candidates(liked_articles: list) -> list:
     return combined
 
 @app.get("/api/recommend")
+@log_request
 def recommend(request: Request, response: Response):
     session_id = get_session_id(request, response)
     liked, disliked = get_user_articles(session_id)
@@ -365,3 +377,44 @@ def recommend(request: Request, response: Response):
     )
 
     return {"status": "success", "articles": ranked[:20]}
+@app.post("/api/source-analysis")
+@log_request
+def run_source_analysis(req: SearchRequest):
+    try:
+        is_offline_cache = req.force_local
+        if req.force_local:
+            articles = query_local_database(req.query)
+        else:
+            try:
+                articles = fetch_news(req.query)
+                if articles:
+                    articles = vectorize_and_store(articles)
+                else:
+                    articles = query_local_database(req.query)
+                    is_offline_cache = True
+            except Exception as api_err:
+                articles = query_local_database(req.query)
+                is_offline_cache = True
+                if not articles:
+                    raise Exception(f"NewsAPI failed AND local database empty: {str(api_err)}")
+        
+        if not articles:
+            return {"status": "success", "results": {"sources": {}}, "is_offline_cache": is_offline_cache}
+            
+        articles = attach_article_sentiment(articles)
+        divergence_results = compute_source_divergence(articles)
+        
+        sources_dict = divergence_results["sources"]
+        for a in articles:
+            s = a.get("source", "Unknown Source")
+            if s and s in sources_dict:
+                # Find if we already added it in ml.py (we did add title/url/etc, but let's add sentiment)
+                for sa in sources_dict[s]["articles"]:
+                    if sa["id"] == a["id"]:
+                        sa["sentiment"] = a.get("sentiment")
+                        break
+                        
+        return {"status": "success", "results": divergence_results, "is_offline_cache": is_offline_cache}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+

@@ -818,3 +818,68 @@ def compute_global_divergence(articles: List[Dict[str, Any]]) -> Dict[str, Any]:
         "pairwise_matrix": matrix,
         "top_countries": top_countries
     }
+
+def compute_source_divergence(articles: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Computes source narrative divergence metrics.
+    Groups articles by source and calculates Euclidean distance from the 'Rest of Media' mean embedding.
+    """
+    valid_articles = [a for a in articles if a.get("source")]
+    if not valid_articles:
+        return {"sources": {}}
+        
+    ids = [a["id"] for a in valid_articles]
+    data = collection.get(ids=ids, include=["embeddings", "metadatas"])
+    
+    if data.get("embeddings") is None or len(data["embeddings"]) == 0:
+        return {"sources": {}}
+        
+    embeddings = np.array(data["embeddings"], dtype=np.float32)
+    fetched_metas = data["metadatas"]
+    
+    source_groups = {}
+    for i, meta in enumerate(fetched_metas):
+        s = meta.get("source", "Unknown Source")
+        if s not in source_groups:
+            source_groups[s] = {
+                "indices": [],
+                "count": 0,
+                "articles": []
+            }
+        source_groups[s]["indices"].append(i)
+        source_groups[s]["count"] += 1
+        
+        # Add basic article info for the frontend
+        source_groups[s]["articles"].append({
+            "id": data["ids"][i],
+            "title": meta.get("title", ""),
+            "url": meta.get("url", ""),
+            "category": meta.get("category", "General"),
+            "publish_date": meta.get("publish_date", "")
+        })
+        
+    source_means = {}
+    for s, group in source_groups.items():
+        s_embs = embeddings[group["indices"]]
+        source_means[s] = np.mean(s_embs, axis=0)
+        
+    source_stats = {}
+    for s in source_groups.keys():
+        other_indices = []
+        for other_s, group in source_groups.items():
+            if other_s != s:
+                other_indices.extend(group["indices"])
+                
+        if len(other_indices) > 0:
+            rest_of_media_emb = np.mean(embeddings[other_indices], axis=0)
+            divergence = float(np.linalg.norm(source_means[s] - rest_of_media_emb))
+        else:
+            divergence = 0.0
+            
+        source_stats[s] = {
+            "count": source_groups[s]["count"],
+            "divergence": divergence,
+            "articles": source_groups[s]["articles"]
+        }
+        
+    return {"sources": source_stats}

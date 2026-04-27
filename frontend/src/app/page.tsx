@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Loader2, BarChart2, Compass, Layers, Database, WifiOff, Globe, Link as LinkIcon, BookOpenText, X, ExternalLink, ThumbsUp, ThumbsDown } from "lucide-react";
+import { Search, Loader2, BarChart2, Compass, Layers, Database, WifiOff, Globe, Link as LinkIcon, Eye, BookOpenText, X, ExternalLink, ThumbsUp, ThumbsDown } from "lucide-react";
 import DailyGradient from "@/components/DailyGradient";
 import GlobalMaxima from "@/components/GlobalMaxima";
+import SourceLens from "@/components/SourceLens";
 import SystemSplash from "@/components/SystemSplash";
 import SystemBoot from "@/components/SystemBoot";
 import Tooltip from "@/components/Tooltip";
@@ -237,7 +238,7 @@ export default function Home() {
   const [isOfflineCache, setIsOfflineCache] = useState(false);
   const [backendReady, setBackendReady] = useState(false);
   const [showBoot, setShowBoot] = useState(true);
-  const [activeTab, setActiveTab] = useState<"search" | "gradient" | "global" | "recommended">("search");
+  const [activeTab, setActiveTab] = useState<"search" | "gradient" | "global" | "recommended" | "sources">("search");
   const [localMode, setLocalMode] = useState(false);
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
   const [articleModalOpen, setArticleModalOpen] = useState(false);
@@ -425,7 +426,7 @@ export default function Home() {
         </div>
       )}
 
-      <div className={`z-10 w-full max-w-3xl text-center space-y-8 transition-all duration-500 ${articles.length > 0 || activeTab === 'gradient' || activeTab === 'global' || activeTab === 'recommended' ? 'mt-0' : 'mt-[20vh]'}`}>
+      <div className={`z-10 w-full max-w-5xl text-center space-y-8 transition-all duration-500 ${articles.length > 0 || activeTab === 'gradient' || activeTab === 'global' || activeTab === 'recommended' || activeTab === 'sources' ? 'mt-0' : 'mt-[20vh]'}`}>
         <div className="flex justify-center">
           <h1 className="text-6xl md:text-8xl lg:text-[8rem] font-extrabold tracking-tighter text-white mb-6 relative group inline-block whitespace-nowrap">
             The Local{" "}
@@ -470,17 +471,29 @@ export default function Home() {
             >
               {backendReady ? <ThumbsUp className="w-5 h-5 shrink-0" /> : <Loader2 className="w-5 h-5 shrink-0 animate-spin" />} Recommended
             </button>
+           <button 
+              onClick={() => {
+                 setActiveTab("sources");
+                 setQuery("");
+                 setSearchedQuery("");
+                 setArticles([]);
+              }}
+              disabled={!backendReady}
+              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed ${activeTab === 'sources' ? 'bg-emerald-600 text-white shadow-[0_0_20px_rgba(16,185,129,0.4)] border-emerald-500' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
+           >
+              {backendReady ? <Eye className="w-5 h-5 shrink-0" /> : <Loader2 className="w-5 h-5 shrink-0 animate-spin" />} Source Lens
+            </button>
           </div>
         </div>
 
-        {(activeTab === "search" || activeTab === "global") && (
+        {(activeTab === "search" || activeTab === "global" || activeTab === "sources") && (
           <form onSubmit={handleSearch} className="relative w-full max-w-3xl mx-auto animate-in fade-in duration-500">
             <div className="relative flex items-center">
             <input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder={backendReady ? (activeTab === "global" ? "Enter a topic to explore global news narratives" : "e.g. Artificial Intelligence, Global Economy...") : "Warming up AI vector models..."}
+              placeholder={backendReady ? (activeTab === "global" ? "Enter a topic to explore global news narratives" : activeTab === "sources" ? "Enter a topic to analyze news sources" : "e.g. Artificial Intelligence, Global Economy...") : "Warming up AI vector models..."}
               className="w-full pl-6 pr-32 py-4 bg-neutral-900/80 border border-neutral-800 rounded-2xl text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-lg shadow-xl backdrop-blur-sm disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={loading || !backendReady}
             />
@@ -612,6 +625,11 @@ export default function Home() {
       {activeTab === "global" && (
          <div className="w-full mt-12 mb-20 animate-in fade-in duration-500">
             <GlobalMaxima key={searchedQuery} query={searchedQuery} localMode={localMode} />
+         </div>
+      )}
+      {activeTab === "sources" && (
+         <div className="w-full mt-12 mb-20 animate-in fade-in duration-500">
+            <SourceLens key={searchedQuery} query={searchedQuery} localMode={localMode} />
          </div>
       )}
 
