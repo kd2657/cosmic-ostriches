@@ -2,9 +2,11 @@
 
 import { useState, useEffect } from "react";
 import { Loader2, ChevronDown, ChevronUp, Link as LinkIcon, Compass } from "lucide-react";
+import MetricsOverlay from "./MetricsOverlay";
 
 export default function DailyGradient({ localMode = false }: { localMode?: boolean }) {
   const [gradient, setGradient] = useState<any[]>([]);
+  const [evalMetrics, setEvalMetrics] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
@@ -23,7 +25,15 @@ export default function DailyGradient({ localMode = false }: { localMode?: boole
         const res = await fetch(`http://localhost:8000/api/daily-gradient?force_local=${localMode}`);
         if (!res.ok) throw new Error("Failed to fetch daily gradient");
         const json = await res.json();
-        setGradient(json.results || []);
+        
+        // Backend now returns { briefing: [...], eval_metrics: {...} } or just [...]
+        if (json.results?.briefing) {
+            setGradient(json.results.briefing);
+            setEvalMetrics(json.results.eval_metrics || {});
+        } else {
+            setGradient(json.results || []);
+            setEvalMetrics({});
+        }
       } catch (err: any) {
         setError(err.message);
       } finally {
@@ -58,6 +68,8 @@ export default function DailyGradient({ localMode = false }: { localMode?: boole
              Diverse narratives from the last 24 hours in a bite-sized serving! Expand nodes to see different perspectives.
           </p>
        </div>
+       
+       <MetricsOverlay metrics={evalMetrics} title="Daily Gradient Metrics" />
        
        <div className="flex flex-col gap-6 pb-20">
          {gradient.map((item, idx) => {
@@ -107,7 +119,6 @@ export default function DailyGradient({ localMode = false }: { localMode?: boole
                        <div className="p-6 pt-0 border-t border-neutral-800/50 bg-neutral-950/40">
                           <h4 className="text-sm font-semibold text-neutral-400 my-4 tracking-wider uppercase flex items-center justify-between">
                             <span>Similar Stories:</span>
-                            <span className="text-xs bg-neutral-800 px-2 py-0.5 rounded text-neutral-500">{subs.length} Selected</span>
                           </h4>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                              {subs.map((sub: any, sIdx: number) => (
