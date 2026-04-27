@@ -300,6 +300,7 @@ def get_system_status():
     return model_manager.get_status()
 
 @app.get("/api/article/{article_id:path}")
+@log_request
 def fetch_single_article(article_id: str):
     data = get_article_by_id(article_id)
     if not data:
