@@ -11,6 +11,7 @@ from sentence_transformers import util
 from sklearn.cluster import (AffinityPropagation, AgglomerativeClustering, HDBSCAN)
 from sklearn.mixture import GaussianMixture
 from sklearn.manifold import TSNE
+from sklearn.metrics import silhouette_score, davies_bouldin_score
 from transformers import logging as transformers_logging
 from transformers import pipeline
 from umap import UMAP
@@ -161,6 +162,8 @@ def query_local_database(query_text: str, n_results: int = 50) -> List[Dict[str,
                 "body": meta.get("body", ""),
                 "url": meta.get("url", ""),
                 "source": meta.get("source", ""),
+                "body": meta.get("body", ""),
+                "category": meta.get("category", "General"),
                 "publish_date": meta.get("publish_date", ""),
                 "embed_text": f"{meta.get('title', '')}. {meta.get('body', '') or meta.get('description', '')}"
             })
@@ -285,7 +288,7 @@ def _get_reduced_embeddings(embeddings: np.ndarray, dim_reduction: str) -> np.nd
         return UMAP(n_neighbors=n_neighbors, min_dist=0.1, n_components=2, random_state=42).fit_transform(embeddings)
 
 def _generate_narrative_summaries(cluster_texts: Dict[int, List[str]], client: Optional[genai.Client], target_clusters: List[int]) -> tuple[Dict[str, Any], bool]:
-    """Internal helper to generate summaries using Gemini or local fallback."""
+    """Internal helper to generate summaries using Gemini, OpenAI, or local fallback."""
     summaries = {}
     cluster_strings = ""
     for cluster_id in cluster_texts:
@@ -332,10 +335,44 @@ def _generate_narrative_summaries(cluster_texts: Dict[int, List[str]], client: O
             summary_generated = True
         except Exception as e:
             print(f"Gemini Error: {e}")
-            used_local_fallback = True
 
     if not summary_generated:
-        # Using the pre-loaded summarizer from model_manager via the proxy
+        openai_key = os.getenv("OPENAI_API_KEY")
+        if openai_key and target_clusters:
+            try:
+                from openai import OpenAI
+                import json
+                openai_client = OpenAI(api_key=openai_key)
+                prompt = (
+                    f"You are an analytical AI bot. Read the following sets of news reporting grouped by narrative. "
+                    f"Provide a short title and a strict 2-sentence summary for each narrative. "
+                    f"The first sentence should summarize the core narrative. "
+                    f"The second sentence MUST explicitly focus on what makes this particular narrative different from the others. "
+                    f"Avoid using the word 'cluster' in your response. "
+                    f"Return your response STRICTLY as a valid JSON object where each KEY is the plain narrative number as a string (e.g. \"0\", \"1\", \"2\") "
+                    f"and each VALUE is a nested object containing two string fields: \"title\" and \"summary\". "
+                    f"Ensure all text values are properly escaped and contain absolutely NO literal newlines. \n\n{cluster_strings}"
+                )
+                response = openai_client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.3,
+                    max_tokens=2048,
+                    response_format={"type": "json_object"}
+                )
+                json_text = response.choices[0].message.content.strip()
+                batch_summaries = json.loads(json_text)
+                for cid in target_clusters:
+                    summary = batch_summaries.get(str(cid)) or batch_summaries.get(f"Cluster {cid}") or batch_summaries.get(f"Narrative {cid}")
+                    summaries[str(cid)] = summary if summary else "Narrative summary unavailable."
+                summary_generated = True
+                used_local_fallback = False
+                print("Used OpenAI fallback for summaries.")
+            except Exception as e:
+                print(f"OpenAI Error: {e}")
+
+    if not summary_generated:
+        used_local_fallback = True
         summarizer = _get_summarizer()
         for cid in target_clusters:
             input_text = cluster_texts[cid][0][:100] if cluster_texts.get(cid) else "Global news."
@@ -425,16 +462,19 @@ def process_batch_cluster(
     target_clusters = [cid for cid in cluster_texts if cid != -1]
     summaries, used_local_fallback = _generate_narrative_summaries(cluster_texts, client, target_clusters)
         
-    from models.metrics import compute_narrative_diversity_score
+    from models.metrics import compute_narrative_diversity_score, compute_clustering_eval_metrics
     nds_scores = compute_narrative_diversity_score(embeddings, np.array(labels))
     cluster_sentiment = _compute_cluster_sentiment_stats(cluster_polarities)
+    
+    eval_metrics = compute_clustering_eval_metrics(embeddings, np.array(labels), nds_scores)
             
     return {
         "points": results, 
         "summaries": summaries,
         "nds_scores": nds_scores,
         "cluster_sentiment": cluster_sentiment,
-        "is_local_summary": used_local_fallback
+        "is_local_summary": used_local_fallback,
+        "eval_metrics": eval_metrics
     }
 
 def farthest_point_sampling(embeddings: np.ndarray, k: int, categories: List[str] = None, max_per_category: int = 2) -> List[int]:
@@ -631,7 +671,20 @@ def process_daily_gradient(articles: List[Dict[str, Any]], n_main: int = 8, n_re
             "related_articles": related_articles
         })
         
-    return briefing
+    eval_metrics = {}
+    if len(main_indices) > 1:
+        main_embs = embeddings[main_indices]
+        # Cosine distance = 1 - cosine_similarity
+        sim_matrix = util.cos_sim(main_embs, main_embs).numpy()
+        n_main_chosen = len(main_indices)
+        sum_sim = np.sum(sim_matrix) - np.trace(sim_matrix) # excluding diagonal
+        avg_sim = sum_sim / (n_main_chosen * (n_main_chosen - 1))
+        eval_metrics["avg_pairwise_distance"] = round(1.0 - float(avg_sim), 3)
+        
+    return {
+        "briefing": briefing,
+        "eval_metrics": eval_metrics
+    }
 
 def get_article_by_id(article_id: str) -> Optional[Dict[str, Any]]:
     """Retrieve a single article by its explicit ID from ChromaDB."""
@@ -650,6 +703,29 @@ def get_article_by_id(article_id: str) -> Optional[Dict[str, Any]]:
             "country": meta.get("country", "")
         }
     return None
+
+def get_articles_by_ids(article_ids: List[str]) -> List[Dict[str, Any]]:
+    """Retrieve multiple articles by their explicit IDs from ChromaDB."""
+    if not article_ids:
+        return []
+    results = collection.get(ids=article_ids, include=["metadatas"])
+    articles = []
+    if results and results["ids"]:
+        for idx, uid in enumerate(results["ids"]):
+            meta = results["metadatas"][idx]
+            articles.append({
+                "id": uid,
+                "title": meta.get("title", "Unknown"),
+                "description": meta.get("description", ""),
+                "url": meta.get("url", ""),
+                "source": meta.get("source", ""),
+                "body": meta.get("body", ""),
+                "publish_date": meta.get("publish_date", ""),
+                "category": meta.get("category", "General"),
+                "country": meta.get("country", "")
+            })
+    return articles
+
 
 def compute_global_divergence(articles: List[Dict[str, Any]]) -> Dict[str, Any]:
     """

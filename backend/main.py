@@ -1,10 +1,14 @@
 import os
 import sys
 from dotenv import load_dotenv
-load_dotenv()
 
+# Suppress low-level library warnings (OpenMP/MKL)
 os.environ["KMP_WARNINGS"] = "0"
 os.environ["OMP_WARNINGS"] = "0"
+
+# Load environment variables
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+load_dotenv()
 
 if sys.platform != "win32":
     import warnings
@@ -21,11 +25,14 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
-from api import fetch_news, fetch_daily_gradient
+from api import fetch_news, fetch_daily_gradient as fetch_daily_articles
 from ml import vectorize_and_store, process_batch_cluster, query_local_database, compute_similarity_scores, process_daily_gradient, get_article_by_id, compute_global_divergence, compute_source_divergence, model_manager
 from sentiment import SentimentClassifier
 from cluster_stream import stream_search_pipeline
 from fastapi.responses import StreamingResponse
+from fastapi import Request, Response
+from session import get_session_id, record_vote, get_user_articles
+from recommender import rank_articles_for_user
 from logger import log_request
 
 @asynccontextmanager
@@ -210,7 +217,7 @@ def get_daily_gradient(force_local: bool = False):
             # We can use "news" as a generic query to pull the most recent / general articles.
             articles = query_local_database("news", n_results=100)
         else:
-            articles = fetch_daily_gradient(page_size=100)
+            articles = fetch_daily_articles(page_size=100)
             if articles:
                 articles = vectorize_and_store(articles)
                 
@@ -223,6 +230,7 @@ def get_daily_gradient(force_local: bool = False):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/global-analysis")
+@log_request
 def run_global_analysis(req: SearchRequest):
     try:
         is_offline_cache = req.force_local
@@ -298,7 +306,76 @@ def fetch_single_article(article_id: str):
         raise HTTPException(status_code=404, detail="Article not found")
     attach_article_sentiment([data])
     return {"status": "success", "article": data}
+@app.post("/api/vote")
+@log_request
+def vote(payload: dict, request: Request, response: Response):
+    article_id = payload.get("article_id")
+    vote_type = payload.get("vote")
 
+    if not article_id or vote_type not in ("up", "down", None):
+        raise HTTPException(status_code=400, detail="Invalid input")
+
+    session_id = get_session_id(request, response)
+    record_vote(session_id, article_id, vote_type)
+
+    return {"status": "ok"}
+
+def _get_recommendation_candidates(liked_articles: list) -> list:
+    """Helper to fetch recent and semantic candidates for recommendations."""
+    RECENT_K = 50
+    SEMANTIC_K = 50
+
+    # 1. Fetch recent articles
+    recent = fetch_daily_articles(page_size=RECENT_K)
+    recent = vectorize_and_store(recent) if recent else []
+
+    # 2. Build semantic query
+    if liked_articles:
+        profile_query = " ".join([
+            (a.get("title", "") + " " + (a.get("description") or ""))[:200]
+            for a in liked_articles[:5]
+        ])
+    else:
+        profile_query = "news"
+
+    # 3. Retrieve semantically similar articles
+    semantic = query_local_database(profile_query, n_results=SEMANTIC_K)
+
+    # 4. Merge + deduplicate
+    seen_ids = set()
+    combined = []
+    for article in recent + semantic:
+        aid = article.get("id")
+        if aid and aid not in seen_ids:
+            seen_ids.add(aid)
+            combined.append(article)
+    
+    return combined
+
+@app.get("/api/recommend")
+@log_request
+def recommend(request: Request, response: Response):
+    session_id = get_session_id(request, response)
+    liked, disliked = get_user_articles(session_id)
+
+    # 1. Fetch Candidates
+    candidates = _get_recommendation_candidates(liked)
+    if not candidates:
+        return {"status": "success", "articles": []}
+
+    # 2. Cold Start (no user data) — return recency-ordered candidates
+    if not liked:
+        return {"status": "success", "articles": candidates[:20]}
+
+    # 3. Personalized Ranking — pure embedding similarity, no sentiment
+    ranked = rank_articles_for_user(
+        articles=candidates,
+        liked_articles=liked,
+        disliked_articles=disliked,
+        use_sentiment=False
+    )
+
+    return {"status": "success", "articles": ranked[:20]}
 @app.post("/api/source-analysis")
 @log_request
 def run_source_analysis(req: SearchRequest):
