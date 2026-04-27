@@ -1,5 +1,7 @@
 import os
 import sys
+from dotenv import load_dotenv
+load_dotenv()
 
 os.environ["KMP_WARNINGS"] = "0"
 os.environ["OMP_WARNINGS"] = "0"
@@ -20,7 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 from api import fetch_news, fetch_daily_gradient
-from ml import vectorize_and_store, process_batch_cluster, query_local_database, compute_similarity_scores, process_daily_gradient, get_article_by_id, compute_global_divergence, model_manager
+from ml import vectorize_and_store, process_batch_cluster, query_local_database, compute_similarity_scores, process_daily_gradient, get_article_by_id, compute_global_divergence, compute_source_divergence, model_manager
 from sentiment import SentimentClassifier
 from cluster_stream import stream_search_pipeline
 from fastapi.responses import StreamingResponse
@@ -279,3 +281,44 @@ def fetch_single_article(article_id: str):
         raise HTTPException(status_code=404, detail="Article not found")
     attach_article_sentiment([data])
     return {"status": "success", "article": data}
+
+@app.post("/api/source-analysis")
+def run_source_analysis(req: SearchRequest):
+    try:
+        is_offline_cache = req.force_local
+        if req.force_local:
+            articles = query_local_database(req.query)
+        else:
+            try:
+                articles = fetch_news(req.query)
+                if articles:
+                    articles = vectorize_and_store(articles)
+                else:
+                    articles = query_local_database(req.query)
+                    is_offline_cache = True
+            except Exception as api_err:
+                articles = query_local_database(req.query)
+                is_offline_cache = True
+                if not articles:
+                    raise Exception(f"NewsAPI failed AND local database empty: {str(api_err)}")
+        
+        if not articles:
+            return {"status": "success", "results": {"sources": {}}, "is_offline_cache": is_offline_cache}
+            
+        articles = attach_article_sentiment(articles)
+        divergence_results = compute_source_divergence(articles)
+        
+        sources_dict = divergence_results["sources"]
+        for a in articles:
+            s = a.get("source", "Unknown Source")
+            if s and s in sources_dict:
+                # Find if we already added it in ml.py (we did add title/url/etc, but let's add sentiment)
+                for sa in sources_dict[s]["articles"]:
+                    if sa["id"] == a["id"]:
+                        sa["sentiment"] = a.get("sentiment")
+                        break
+                        
+        return {"status": "success", "results": divergence_results, "is_offline_cache": is_offline_cache}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
