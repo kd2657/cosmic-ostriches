@@ -159,6 +159,7 @@ def query_local_database(query_text: str, n_results: int = 50) -> List[Dict[str,
                 "id": uid,
                 "title": meta.get("title", "Unknown"),
                 "description": meta.get("description", ""),
+                "body": meta.get("body", ""),
                 "url": meta.get("url", ""),
                 "source": meta.get("source", ""),
                 "body": meta.get("body", ""),
@@ -287,7 +288,7 @@ def _get_reduced_embeddings(embeddings: np.ndarray, dim_reduction: str) -> np.nd
         return UMAP(n_neighbors=n_neighbors, min_dist=0.1, n_components=2, random_state=42).fit_transform(embeddings)
 
 def _generate_narrative_summaries(cluster_texts: Dict[int, List[str]], client: Optional[genai.Client], target_clusters: List[int]) -> tuple[Dict[str, Any], bool]:
-    """Internal helper to generate summaries using Gemini or local fallback."""
+    """Internal helper to generate summaries using Gemini, OpenAI, or local fallback."""
     summaries = {}
     cluster_strings = ""
     for cluster_id in cluster_texts:
@@ -334,10 +335,44 @@ def _generate_narrative_summaries(cluster_texts: Dict[int, List[str]], client: O
             summary_generated = True
         except Exception as e:
             print(f"Gemini Error: {e}")
-            used_local_fallback = True
 
     if not summary_generated:
-        # Using the pre-loaded summarizer from model_manager via the proxy
+        openai_key = os.getenv("OPENAI_API_KEY")
+        if openai_key and target_clusters:
+            try:
+                from openai import OpenAI
+                import json
+                openai_client = OpenAI(api_key=openai_key)
+                prompt = (
+                    f"You are an analytical AI bot. Read the following sets of news reporting grouped by narrative. "
+                    f"Provide a short title and a strict 2-sentence summary for each narrative. "
+                    f"The first sentence should summarize the core narrative. "
+                    f"The second sentence MUST explicitly focus on what makes this particular narrative different from the others. "
+                    f"Avoid using the word 'cluster' in your response. "
+                    f"Return your response STRICTLY as a valid JSON object where each KEY is the plain narrative number as a string (e.g. \"0\", \"1\", \"2\") "
+                    f"and each VALUE is a nested object containing two string fields: \"title\" and \"summary\". "
+                    f"Ensure all text values are properly escaped and contain absolutely NO literal newlines. \n\n{cluster_strings}"
+                )
+                response = openai_client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.3,
+                    max_tokens=2048,
+                    response_format={"type": "json_object"}
+                )
+                json_text = response.choices[0].message.content.strip()
+                batch_summaries = json.loads(json_text)
+                for cid in target_clusters:
+                    summary = batch_summaries.get(str(cid)) or batch_summaries.get(f"Cluster {cid}") or batch_summaries.get(f"Narrative {cid}")
+                    summaries[str(cid)] = summary if summary else "Narrative summary unavailable."
+                summary_generated = True
+                used_local_fallback = False
+                print("Used OpenAI fallback for summaries.")
+            except Exception as e:
+                print(f"OpenAI Error: {e}")
+
+    if not summary_generated:
+        used_local_fallback = True
         summarizer = _get_summarizer()
         for cid in target_clusters:
             input_text = cluster_texts[cid][0][:100] if cluster_texts.get(cid) else "Global news."
