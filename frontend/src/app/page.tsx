@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, BarChart2, Compass, Layers, Database, WifiOff, Globe, Link as LinkIcon, BookOpenText, X, ExternalLink } from "lucide-react";
+import { Search, Loader2, BarChart2, Compass, Layers, Database, WifiOff, Globe, Link as LinkIcon, BookOpenText, X, ExternalLink, ThumbsUp, ThumbsDown } from "lucide-react";
 import DailyGradient from "@/components/DailyGradient";
 import GlobalMaxima from "@/components/GlobalMaxima";
 import SystemSplash from "@/components/SystemSplash";
 import SystemBoot from "@/components/SystemBoot";
 import Tooltip from "@/components/Tooltip";
+import RecommendedDisplay from "@/components/RecommendedDisplay";
 
 // Set this to false to use the Terminal/Cyberpunk style bootup (SystemBoot)
 // ***************************
@@ -230,11 +231,13 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [articles, setArticles] = useState<Article[]>([]);
+  const [recommended, setRecommended] = useState<Article[]>([]);
+  const [votes, setVotes] = useState<Record<string, "up" | "down" | null>>({});
   const [searchedQuery, setSearchedQuery] = useState("");
   const [isOfflineCache, setIsOfflineCache] = useState(false);
   const [backendReady, setBackendReady] = useState(false);
   const [showBoot, setShowBoot] = useState(true);
-  const [activeTab, setActiveTab] = useState<"search" | "gradient" | "global">("search");
+  const [activeTab, setActiveTab] = useState<"search" | "gradient" | "global" | "recommended">("search");
   const [localMode, setLocalMode] = useState(false);
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
   const [articleModalOpen, setArticleModalOpen] = useState(false);
@@ -269,6 +272,42 @@ export default function Home() {
     }
   }, [isOfflineCache]);
 
+  const openArticleDetail = async (id: string) => {
+    setArticleModalOpen(true);
+    setArticleLoading(true);
+    setArticleError("");
+    setSelectedArticle(null);
+
+    try {
+      // For global maxima/search we use standard endpoint unless localMode is on.
+      const endpoint = localMode ? `http://localhost:8000/api/local/article/${encodeURIComponent(id)}` : `http://localhost:8000/api/article/${encodeURIComponent(id)}`;
+      const res = await fetch(endpoint);
+      if (!res.ok) {
+        throw new Error(`Failed to fetch article: ${res.statusText}`);
+      }
+      const data = await res.json();
+      if (data.status === "success" && data.article) {
+        setSelectedArticle(data.article);
+      } else {
+        throw new Error(data.message || "Failed to load article details");
+      }
+    } catch (err: any) {
+      console.error("Error fetching article details:", err);
+      setArticleError(err.message || "An unexpected error occurred");
+    } finally {
+      setArticleLoading(false);
+    }
+  };
+
+  const closeArticleModal = () => {
+    setArticleModalOpen(false);
+    setTimeout(() => {
+      setSelectedArticle(null);
+      setArticleError("");
+    }, 300);
+  };
+
+
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!query.trim()) return;
@@ -292,51 +331,54 @@ export default function Home() {
     }
   };
 
-  useEffect(() => {
-    if (!articleModalOpen) return;
+  const handleVote = async (articleId: string, vote: "up" | "down") => {
+    let nextVote: "up" | "down" | null = vote;
 
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setArticleModalOpen(false);
+    setVotes(prev => {
+      const current = prev[articleId];
+      if (current === vote) {
+        nextVote = null;
       }
-    };
-
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      document.body.style.overflow = "";
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [articleModalOpen]);
-
-  const openArticleDetail = async (articleId: string) => {
-    setArticleModalOpen(true);
-    setArticleLoading(true);
-    setArticleError("");
-    setSelectedArticle(null);
+      return { ...prev, [articleId]: nextVote };
+    });
 
     try {
-      const res = await fetch(`http://localhost:8000/api/article/${encodeURIComponent(articleId)}`);
-      if (!res.ok) throw new Error("Failed to load article");
-
-      const json = await res.json();
-      if (json.status === "success" && json.article) {
-        setSelectedArticle(json.article);
-      } else {
-        throw new Error("Article not found in database");
-      }
-    } catch (err: unknown) {
-      setSelectedArticle(null);
-      setArticleError(err instanceof Error ? err.message : "Failed to load article");
-    } finally {
-      setArticleLoading(false);
+      await fetch("http://localhost:8000/api/vote", {
+        credentials: "include",
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          article_id: articleId,
+          vote: nextVote
+        })
+      });
+      fetchRecommendations();
+    } catch (err) {
+      console.error("Vote failed", err);
     }
   };
+  const fetchRecommendations = useCallback(async () => {
+    try {
+      const res = await fetch("http://localhost:8000/api/recommend", {
+        method: "GET",
+        credentials: "include"
+      });
 
-  const closeArticleModal = () => {
-    setArticleModalOpen(false);
-  };
+      if (!res.ok) return;
+
+      const json = await res.json();
+      setRecommended(json.articles || []);
+    } catch (err) {
+      console.error("Recommendation fetch failed", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (backendReady) {
+      fetchRecommendations();
+    }
+  }, [backendReady, fetchRecommendations]);
+
 
   return (
     <div className="min-h-screen bg-neutral-950 flex flex-col items-center py-20 px-4 relative overflow-hidden">
@@ -383,7 +425,7 @@ export default function Home() {
         </div>
       )}
 
-      <div className={`z-10 w-full max-w-3xl text-center space-y-8 transition-all duration-500 ${articles.length > 0 || activeTab === 'gradient' || activeTab === 'global' ? 'mt-0' : 'mt-[20vh]'}`}>
+      <div className={`z-10 w-full max-w-3xl text-center space-y-8 transition-all duration-500 ${articles.length > 0 || activeTab === 'gradient' || activeTab === 'global' || activeTab === 'recommended' ? 'mt-0' : 'mt-[20vh]'}`}>
         <div className="flex justify-center">
           <h1 className="text-6xl md:text-8xl lg:text-[8rem] font-extrabold tracking-tighter text-white mb-6 relative group inline-block whitespace-nowrap">
             The Local{" "}
@@ -398,45 +440,41 @@ export default function Home() {
           </p>
         )}
 
-        <div className="flex justify-center gap-4 mt-8 flex-wrap slide-in-from-bottom-4 animate-in fade-in duration-500">
-           <button 
-              onClick={() => {
-                  setActiveTab("search");
-                  setQuery("");
-                  setSearchedQuery("");
-                  setArticles([]);
-              }} 
-              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 ${activeTab === 'search' ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}>
-              <Layers className="w-5 h-5" /> News Clusters
-           </button>
-           <button 
-              onClick={() => {
-                 setActiveTab("gradient");
-                 setQuery("");
-                 setSearchedQuery("");
-                 setArticles([]);
-              }} 
+        {/* Tab row — breaks out of max-w-3xl visually using full viewport width */}
+        <div className="flex justify-center slide-in-from-bottom-4 animate-in fade-in duration-500">
+          <div className="flex items-center gap-4 flex-nowrap">
+            <button
+              onClick={() => { setActiveTab("search"); setQuery(""); setSearchedQuery(""); setArticles([]); }}
+              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'search' ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
+            >
+              <Layers className="w-5 h-5 shrink-0" /> News Clusters
+            </button>
+            <button
+              onClick={() => { setActiveTab("gradient"); setQuery(""); setSearchedQuery(""); setArticles([]); }}
               disabled={!backendReady}
-              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${activeTab === 'gradient' ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
-           >
-              {backendReady ? <Compass className="w-5 h-5" /> : <Loader2 className="w-5 h-5 animate-spin" />} Daily Gradient
-           </button>
-           <button 
-              onClick={() => {
-                 setActiveTab("global");
-                 setQuery("");
-                 setSearchedQuery("");
-                 setArticles([]);
-              }}
+              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed ${activeTab === 'gradient' ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
+            >
+              {backendReady ? <Compass className="w-5 h-5 shrink-0" /> : <Loader2 className="w-5 h-5 shrink-0 animate-spin" />} Daily Gradient
+            </button>
+            <button
+              onClick={() => { setActiveTab("global"); setQuery(""); setSearchedQuery(""); setArticles([]); }}
               disabled={!backendReady}
-              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${activeTab === 'global' ? 'bg-indigo-600 text-white shadow-[0_0_20px_rgba(79,70,229,0.4)] border-indigo-500' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
-           >
-              {backendReady ? <Globe className="w-5 h-5" /> : <Loader2 className="w-5 h-5 animate-spin" />} Global Maxima
-           </button>
+              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed ${activeTab === 'global' ? 'bg-indigo-600 text-white shadow-[0_0_20px_rgba(79,70,229,0.4)] border-indigo-500' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
+            >
+              {backendReady ? <Globe className="w-5 h-5 shrink-0" /> : <Loader2 className="w-5 h-5 shrink-0 animate-spin" />} Global Maxima
+            </button>
+            <button
+              onClick={() => { setActiveTab("recommended"); setQuery(""); setSearchedQuery(""); setArticles([]); }}
+              disabled={!backendReady}
+              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed ${activeTab === 'recommended' ? 'bg-emerald-600 text-white shadow-[0_0_20px_rgba(16,185,129,0.4)] border-emerald-500' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
+            >
+              {backendReady ? <ThumbsUp className="w-5 h-5 shrink-0" /> : <Loader2 className="w-5 h-5 shrink-0 animate-spin" />} Recommended
+            </button>
+          </div>
         </div>
 
         {(activeTab === "search" || activeTab === "global") && (
-          <form onSubmit={handleSearch} className="relative mt-8 w-full max-w-3xl mx-auto animate-in fade-in duration-500">
+          <form onSubmit={handleSearch} className="relative w-full max-w-3xl mx-auto animate-in fade-in duration-500">
             <div className="relative flex items-center">
             <input
               type="text"
@@ -451,8 +489,11 @@ export default function Home() {
               disabled={loading || !query.trim() || !backendReady}
               className="absolute right-2 px-6 py-2 bg-white text-black font-semibold rounded-xl hover:bg-neutral-200 transition-colors disabled:opacity-50 flex items-center gap-2 cursor-pointer"
             >
-              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 
-               !backendReady ? <Loader2 className="w-5 h-5 animate-spin" /> : "Search"}
+                {loading ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                "Search"
+              )}
             </button>
           </div>
         </form>
@@ -513,11 +554,34 @@ export default function Home() {
                           rel="noreferrer" 
                           className="flex items-center gap-1 text-blue-400 hover:text-blue-300 bg-blue-900/10 px-3 py-1 rounded-full transition-colors text-xs font-semibold"
                         >
-                           <LinkIcon className="w-3 h-3" /> Original Link
+                           <LinkIcon className="w-3 h-3" /> Read Article
                         </a>
                       )}
+
+                      <button
+                        onClick={() => handleVote(a.id, "up")}
+                        className={`p-2 rounded-lg transition ${
+                          votes[a.id] === "up"
+                            ? "bg-emerald-600 text-white shadow-lg"
+                            : "bg-emerald-900/20 hover:bg-emerald-800/40 text-emerald-400"
+                        }`}
+                      >
+                        <ThumbsUp className="w-4 h-4" />
+                      </button>
+
+                      <button
+                        onClick={() => handleVote(a.id, "down")}
+                        className={`p-2 rounded-lg transition ${
+                          votes[a.id] === "down"
+                            ? "bg-red-600 text-white shadow-lg"
+                            : "bg-red-900/20 hover:bg-red-800/40 text-red-400"
+                        }`}
+                      >
+                        <ThumbsDown className="w-4 h-4" />
+                      </button>
                    </div>
                 </div>
+
                 {a.sentiment && (
                   <div className="mt-4 pt-3 border-t border-neutral-800 flex items-center justify-between gap-3">
                     <span
@@ -536,6 +600,13 @@ export default function Home() {
         </div>
       )}
 
+      {activeTab === "recommended" && (
+        <RecommendedDisplay
+          recommended={recommended}
+          votes={votes}
+          handleVote={handleVote}
+        />
+      )}
       {activeTab === "gradient" && <DailyGradient localMode={localMode} />}
       
       {activeTab === "global" && (
@@ -633,7 +704,7 @@ export default function Home() {
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/15 px-4 py-2 text-sm font-medium text-blue-200 transition-colors hover:bg-blue-500/25 hover:text-white"
                         >
-                          Original Link
+                          Read Article
                           <ExternalLink className="h-4 w-4" />
                         </a>
                       </div>
@@ -646,5 +717,6 @@ export default function Home() {
         </div>
       )}
     </div>
+    
   );
 }

@@ -704,6 +704,29 @@ def get_article_by_id(article_id: str) -> Optional[Dict[str, Any]]:
         }
     return None
 
+def get_articles_by_ids(article_ids: List[str]) -> List[Dict[str, Any]]:
+    """Retrieve multiple articles by their explicit IDs from ChromaDB."""
+    if not article_ids:
+        return []
+    results = collection.get(ids=article_ids, include=["metadatas"])
+    articles = []
+    if results and results["ids"]:
+        for idx, uid in enumerate(results["ids"]):
+            meta = results["metadatas"][idx]
+            articles.append({
+                "id": uid,
+                "title": meta.get("title", "Unknown"),
+                "description": meta.get("description", ""),
+                "url": meta.get("url", ""),
+                "source": meta.get("source", ""),
+                "body": meta.get("body", ""),
+                "publish_date": meta.get("publish_date", ""),
+                "category": meta.get("category", "General"),
+                "country": meta.get("country", "")
+            })
+    return articles
+
+
 def compute_global_divergence(articles: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Computes geopolitical narrative divergence metrics.

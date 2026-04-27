@@ -15,13 +15,17 @@ NEWS_API_AI_URL = "https://newsapi.ai/api/v1/article/getArticles"
 # =====================================================
 # RSS FETCH (Broad Fallback)
 # =====================================================
+
+# Global session for connection pooling
+_http_session = requests.Session()
+_http_session.headers.update({"User-Agent": "Mozilla/5.0 (The Local Minima; Narrative Synthesis)"})
+
 def _fetch_full_body_text(url: str) -> str:
     """
     Scrapes the full text body from a news URL using a simple heuristic.
     """
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (The Local Minima; Narrative Synthesis)"}
-        response = requests.get(url, timeout=5, headers=headers)
+        response = _http_session.get(url, timeout=5)
         if response.status_code != 200:
             return ""
         
@@ -30,7 +34,7 @@ def _fetch_full_body_text(url: str) -> str:
         # Remove script and style elements
         for script_or_style in soup(["script", "style", "nav", "footer", "header"]):
             script_or_style.decompose()
-
+        
         # Heuristic: Find all <p> tags and join them
         # Most major news sites wrap content in <p> tags
         paragraphs = soup.find_all("p")
@@ -86,9 +90,7 @@ def fetch_rss_news(query: str, max_articles: int = 50) -> List[Dict[str, Any]]:
 
     for feed_url in RSS_FEEDS:
         try:
-            # RSS requests are often sensitive to headers
-            headers = {"User-Agent": "Mozilla/5.0 (The Local Minima; Narrative Synthesis)"}
-            response = requests.get(feed_url, timeout=5, headers=headers)
+            response = _http_session.get(feed_url, timeout=5)
             feed = feedparser.parse(response.content)
         except Exception:
             continue
@@ -141,6 +143,8 @@ def fetch_rss_news(query: str, max_articles: int = 50) -> List[Dict[str, Any]]:
 
     return articles
 
+
+@lru_cache(maxsize=32)
 def fetch_news(query: str, page_size: int = 50) -> List[Dict[str, Any]]:
     """
     Primary news pipeline: NewsAPI.ai -> (RSS + Local DB Fallback).
