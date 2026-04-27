@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import { ArrowLeft, Loader2, Settings2, Sparkles, Info, X, ExternalLink, ChevronRight, Database } from "lucide-react";
 import ClusterLoadingBar from "@/components/ClusterLoadingBar";
 import Tooltip from "@/components/Tooltip";
+import MetricsOverlay from "@/components/MetricsOverlay";
 
 const formatTextIntoParagraphs = (text: string) => {
   if (!text) return ["Content unavailable."];
@@ -86,6 +87,7 @@ function ClusterContent() {
   const [summaries, setSummaries] = useState<Record<string, {title: string, summary: string} | string>>({});
   const [ndsScores, setNdsScores] = useState<Record<string, number>>({});
   const [clusterSentiment, setClusterSentiment] = useState<Record<string, ClusterSentiment>>({});
+  const [evalMetrics, setEvalMetrics] = useState<any>({});
   const [selectedCluster, setSelectedCluster] = useState<number | null>(null);
   const [isLocalSummary, setIsLocalSummary] = useState(false);
   const [isOfflineCache, setIsOfflineCache] = useState(false);
@@ -166,6 +168,7 @@ function ClusterContent() {
                 setNdsScores(results.nds_scores || {});
                 setIsLocalSummary(results.is_local_summary || false);
                 setIsOfflineCache(results.is_offline_cache || false);
+                setEvalMetrics(results.eval_metrics || {});
               } else if (payload.event === "error") {
                 throw new Error(payload.data);
               }
@@ -286,7 +289,8 @@ function ClusterContent() {
   });
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-white p-6 md:p-10 flex flex-col h-screen">
+    <div className="min-h-screen bg-neutral-950 text-white p-6 md:p-10 flex flex-col h-screen relative">
+      <MetricsOverlay metrics={evalMetrics} title="Clustering Metrics" />
       <header className="flex items-center justify-between mb-8 flex-shrink-0 z-10 w-full">
         <div className="flex items-center gap-4">
           <button onClick={() => router.push(`/?q=${encodeURIComponent(query)}`)} className="p-2 hover:bg-neutral-800 rounded-full transition-colors cursor-pointer">

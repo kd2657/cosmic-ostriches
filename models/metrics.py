@@ -65,3 +65,40 @@ def compute_article_distances_from_center(embeddings: np.ndarray, labels: np.nda
         distances[cluster_mask] = dists
         
     return distances
+
+def compute_clustering_eval_metrics(embeddings: np.ndarray, labels: np.ndarray, nds_scores: dict) -> dict:
+    """
+    Computes internal validation metrics for the clustering result.
+    Includes Silhouette Score and Davies-Bouldin Index (with/without noise).
+    """
+    from sklearn.metrics import silhouette_score, davies_bouldin_score
+    
+    eval_metrics = {}
+    unique_labels = set(labels)
+    
+    # With Noise
+    if len(unique_labels) > 1:
+        try:
+            eval_metrics["silhouette_with_noise"] = round(float(silhouette_score(embeddings, labels)), 3)
+            eval_metrics["davies_bouldin_with_noise"] = round(float(davies_bouldin_score(embeddings, labels)), 3)
+        except:
+            pass
+    
+    # Without Noise
+    non_noise_mask = (labels != -1)
+    if np.sum(non_noise_mask) > 1:
+        non_noise_labels = labels[non_noise_mask]
+        non_noise_embeddings = embeddings[non_noise_mask]
+        if len(set(non_noise_labels)) > 1:
+            try:
+                eval_metrics["silhouette_no_noise"] = round(float(silhouette_score(non_noise_embeddings, non_noise_labels)), 3)
+                eval_metrics["davies_bouldin_no_noise"] = round(float(davies_bouldin_score(non_noise_embeddings, non_noise_labels)), 3)
+            except:
+                pass
+        
+    # Aggregate NDS
+    if nds_scores:
+        avg_nds = sum(nds_scores.values()) / max(1, len(nds_scores))
+        eval_metrics["avg_nds"] = round(avg_nds, 3)
+        
+    return eval_metrics

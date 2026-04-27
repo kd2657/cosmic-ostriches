@@ -88,7 +88,7 @@ async def stream_search_pipeline(query: str, algorithm: str, k: Optional[int], d
         yield f"data: {json.dumps({'event': 'stage', 'data': {'stage': '✨ Generating AI narrative synthesis', 'progress': 75}})}\n\n"
         await asyncio.sleep(0)
 
-        from models.metrics import compute_article_distances_from_center, compute_narrative_diversity_score
+        from models.metrics import compute_article_distances_from_center, compute_narrative_diversity_score, compute_clustering_eval_metrics
         article_distances = compute_article_distances_from_center(embeddings, np.array(labels))
         
         results = []
@@ -122,12 +122,14 @@ async def stream_search_pipeline(query: str, algorithm: str, k: Optional[int], d
         target_clusters = [cid for cid in cluster_texts if cid != -1]
         summaries, used_local_fallback = _generate_narrative_summaries(cluster_texts, client, target_clusters)
         nds_scores = compute_narrative_diversity_score(embeddings, np.array(labels))
+        eval_metrics = compute_clustering_eval_metrics(embeddings, np.array(labels), nds_scores)
         
         # Phase 4: Yield Result
         final_data = {
             "points": results,
             "summaries": summaries,
             "nds_scores": nds_scores,
+            "eval_metrics": eval_metrics,
             "is_local_summary": used_local_fallback,
             "is_offline_cache": is_offline_cache
         }
