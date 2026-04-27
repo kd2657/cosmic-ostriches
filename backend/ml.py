@@ -158,10 +158,11 @@ def query_local_database(query_text: str, n_results: int = 50) -> List[Dict[str,
                 "id": uid,
                 "title": meta.get("title", "Unknown"),
                 "description": meta.get("description", ""),
+                "body": meta.get("body", ""),
                 "url": meta.get("url", ""),
                 "source": meta.get("source", ""),
                 "publish_date": meta.get("publish_date", ""),
-                "embed_text": f"{meta.get('title', '')}. {meta.get('description', '')}"
+                "embed_text": f"{meta.get('title', '')}. {meta.get('body', '') or meta.get('description', '')}"
             })
             
     return articles

@@ -98,17 +98,29 @@ def run_article_feed(req: ArticleRequest):
             articles = query_local_database(req.query)
         else:
             try:
-                articles = fetch_news(req.query)
-                if articles:
-                    articles = vectorize_and_store(articles)
+                live_articles = fetch_news(req.query)
+                local_articles = query_local_database(req.query)
+                
+                # Merge logic: prioritize live RSS, then append local DB
+                # Using a set of IDs to prevent duplicates
+                seen_ids = {a["id"] for a in live_articles}
+                articles = live_articles
+                for a in local_articles:
+                    if a["id"] not in seen_ids:
+                        articles.append(a)
+                        seen_ids.add(a["id"])
+                
+                if live_articles:
+                    # Only vectorize the NEW live articles (RSS)
+                    vectorize_and_store(live_articles)
                 else:
-                    articles = query_local_database(req.query)
                     is_offline_cache = True
             except Exception as api_err:
+                print(f"Fetch failure: {api_err}")
                 articles = query_local_database(req.query)
                 is_offline_cache = True
                 if not articles:
-                    raise Exception(f"NewsAPI failed AND local db empty: {str(api_err)}")
+                    raise Exception(f"All sources (API, RSS, Local DB) failed: {str(api_err)}")
         
         if not articles:
             return {"status": "success", "articles": [], "is_offline_cache": is_offline_cache}

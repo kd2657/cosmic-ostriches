@@ -1,13 +1,174 @@
 import os
 import requests
+import feedparser
+import hashlib
+import re
+from datetime import datetime, timedelta
+from difflib import SequenceMatcher
 from typing import List, Dict, Any
 from functools import lru_cache
+from bs4 import BeautifulSoup
 
 NEWS_API_AI_KEY = os.environ.get("NEWSAPI_AI_KEY", "")
 NEWS_API_AI_URL = "https://newsapi.ai/api/v1/article/getArticles"
 
-@lru_cache(maxsize=32)
+# =====================================================
+# RSS FETCH (Broad Fallback)
+# =====================================================
+def _fetch_full_body_text(url: str) -> str:
+    """
+    Scrapes the full text body from a news URL using a simple heuristic.
+    """
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (The Local Minima; Narrative Synthesis)"}
+        response = requests.get(url, timeout=5, headers=headers)
+        if response.status_code != 200:
+            return ""
+        
+        soup = BeautifulSoup(response.content, "lxml")
+        
+        # Remove script and style elements
+        for script_or_style in soup(["script", "style", "nav", "footer", "header"]):
+            script_or_style.decompose()
+
+        # Heuristic: Find all <p> tags and join them
+        # Most major news sites wrap content in <p> tags
+        paragraphs = soup.find_all("p")
+        text = " ".join([p.get_text().strip() for p in paragraphs if len(p.get_text().strip()) > 20])
+        
+        # Basic cleanup: remove excessive whitespace
+        import re
+        text = re.sub(r'\s+', ' ', text).strip()
+        
+        return text
+    except Exception:
+        return ""
+
+def fetch_rss_news(query: str, max_articles: int = 50) -> List[Dict[str, Any]]:
+    """
+    Broad fallback that scrapes major RSS feeds for query matches.
+    """
+    RSS_FEEDS = [
+        "http://rss.cnn.com/rss/edition.rss",
+        "https://feeds.bbci.co.uk/news/rss.xml",
+        "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
+        "https://feeds.washingtonpost.com/rss/world",
+        "https://www.theguardian.com/world/rss",
+        "https://www.reuters.com/rssFeed/worldNews",
+        "https://feeds.npr.org/1001/rss.xml",
+        "https://feeds.bloomberg.com/markets/news.rss",
+        "https://www.cnbc.com/id/100003114/device/rss/rss.html",
+        "https://techcrunch.com/feed/",
+        "https://www.theverge.com/rss/index.xml",
+        "https://www.wired.com/feed/rss",
+        "https://www.aljazeera.com/xml/rss/all.xml",
+        "https://rss.dw.com/xml/rss-en-all",
+        "https://www.france24.com/en/rss",
+    ]
+
+    def normalize(text):
+        return text.lower().strip()
+
+    def hash_item(title, link):
+        return hashlib.md5(f"{title}{link}".encode()).hexdigest()
+
+    def is_recent(published_parsed, hours=48):
+        if not published_parsed:
+            return True
+        published = datetime(*published_parsed[:6])
+        return datetime.utcnow() - published < timedelta(hours=hours)
+
+    def is_similar(a, b, threshold=0.85):
+        return SequenceMatcher(None, a, b).ratio() > threshold
+
+    seen_hashes = set()
+    articles = []
+
+    for feed_url in RSS_FEEDS:
+        try:
+            # RSS requests are often sensitive to headers
+            headers = {"User-Agent": "Mozilla/5.0 (The Local Minima; Narrative Synthesis)"}
+            response = requests.get(feed_url, timeout=5, headers=headers)
+            feed = feedparser.parse(response.content)
+        except Exception:
+            continue
+
+        for entry in feed.entries:
+            title = entry.get("title", "")
+            description = entry.get("summary", "")
+            link = entry.get("link", "")
+            published_parsed = entry.get("published_parsed", None)
+
+            if not title or not link:
+                continue
+
+            # Filtering based on query
+            if query.lower() not in (title + description).lower():
+                continue
+
+            if not is_recent(published_parsed):
+                continue
+
+            uid_hash = hash_item(normalize(title), link)
+            if uid_hash in seen_hashes:
+                continue
+            seen_hashes.add(uid_hash)
+
+            # Scrape full body text for compatibility with NewsAPI.ai results
+            body = _fetch_full_body_text(link)
+            if not body or len(body.split()) < 20:
+                body = description # Fallback to summary if scrape fails
+
+            article = {
+                "id": link,
+                "title": title,
+                "body": body,
+                "category": "RSS",
+                "url": link,
+                "source": feed.feed.get("title", "RSS"),
+                "country": None,
+                "publish_date": entry.get("published", ""),
+                "embed_text": f"{title}. {body}"
+            }
+
+            # Avoid very similar headlines in the same batch
+            if any(is_similar(article["title"], a["title"]) for a in articles[-10:]):
+                continue
+
+            articles.append(article)
+            if len(articles) >= max_articles:
+                return articles
+
+    return articles
+
 def fetch_news(query: str, page_size: int = 50) -> List[Dict[str, Any]]:
+    """
+    Primary news pipeline: NewsAPI.ai -> (RSS + Local DB Fallback).
+    """
+    try:
+        # 1. Try Primary (NewsAPI.ai)
+        articles = fetch_newsapi_ai(query, page_size)
+        if articles:
+            return articles
+    except Exception as e:
+        print(f"[API] NewsAPI.ai failed: {e}")
+
+    # 2. Hybrid Fallback: RSS + Local DB
+    # We don't import query_local_database here to avoid circular imports,
+    # so we'll expect the caller to handle the local DB merge or we return 
+    # a signal that we are in fallback mode.
+    # Actually, let's keep fetch_news returning live articles, 
+    # and merge them in the orchestrator.
+    
+    try:
+        print(f"[API] Attempting RSS fallback for: {query}")
+        return fetch_rss_news(query, page_size)
+    except Exception as e:
+        print(f"[API] RSS failed: {e}")
+        return []
+
+@lru_cache(maxsize=32)
+def fetch_newsapi_ai(query: str, page_size: int = 50) -> List[Dict[str, Any]]:
     """
     Fetches FULL BODY news articles from NewsAPI.ai (Event Registry) based on a query.
     If the API keys are not supplied or the request fails, it will attempt

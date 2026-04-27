@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Loader2, BarChart2, Compass, Layers, Database, WifiOff, Globe, Link as LinkIcon, Eye } from "lucide-react";
+import { Search, Loader2, BarChart2, Compass, Layers, Database, WifiOff, Globe, Link as LinkIcon, Eye, BookOpenText, X, ExternalLink } from "lucide-react";
 import DailyGradient from "@/components/DailyGradient";
 import GlobalMaxima from "@/components/GlobalMaxima";
 import SourceLens from "@/components/SourceLens";
@@ -26,7 +26,8 @@ type ArticleSentiment = {
 type Article = {
   id: string;
   title: string;
-  body: string;
+  description?: string;
+  body?: string;
   source?: string;
   publish_date?: string;
   url?: string;
@@ -43,6 +44,28 @@ const sentimentBadgeStyles: Record<string, string> = {
 
 const getSentimentBadgeStyle = (sentiment: string) =>
   sentimentBadgeStyles[sentiment] ?? "bg-neutral-900/70 text-neutral-300 border-neutral-700";
+
+const formatTextIntoParagraphs = (text: string) => {
+  if (!text) return ["Content unavailable."];
+
+  if (text.includes("\\n")) {
+    return text.split("\\n").filter((p) => p.trim());
+  }
+
+  const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+  const paragraphs: string[] = [];
+  let currentParagraph = "";
+
+  for (let i = 0; i < sentences.length; i++) {
+    currentParagraph += `${sentences[i]} `;
+    if ((i + 1) % 4 === 0 || i === sentences.length - 1) {
+      paragraphs.push(currentParagraph.trim());
+      currentParagraph = "";
+    }
+  }
+
+  return paragraphs;
+};
 
 function BackgroundBlobs() {
   const blobRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -214,6 +237,10 @@ export default function Home() {
   const [showBoot, setShowBoot] = useState(true);
   const [activeTab, setActiveTab] = useState<"search" | "gradient" | "global" | "sources">("search");
   const [localMode, setLocalMode] = useState(false);
+  const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
+  const [articleModalOpen, setArticleModalOpen] = useState(false);
+  const [articleLoading, setArticleLoading] = useState(false);
+  const [articleError, setArticleError] = useState("");
   const router = useRouter();
 
   useEffect(() => {
@@ -229,7 +256,7 @@ export default function Home() {
           }
         }
         setTimeout(checkStatus, 800);
-      } catch (e) {
+      } catch {
         setTimeout(checkStatus, 800);
       }
     };
@@ -264,6 +291,52 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
+  };
+
+  useEffect(() => {
+    if (!articleModalOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setArticleModalOpen(false);
+      }
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = "";
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [articleModalOpen]);
+
+  const openArticleDetail = async (articleId: string) => {
+    setArticleModalOpen(true);
+    setArticleLoading(true);
+    setArticleError("");
+    setSelectedArticle(null);
+
+    try {
+      const res = await fetch(`http://localhost:8000/api/article/${encodeURIComponent(articleId)}`);
+      if (!res.ok) throw new Error("Failed to load article");
+
+      const json = await res.json();
+      if (json.status === "success" && json.article) {
+        setSelectedArticle(json.article);
+      } else {
+        throw new Error("Article not found in database");
+      }
+    } catch (err: unknown) {
+      setSelectedArticle(null);
+      setArticleError(err instanceof Error ? err.message : "Failed to load article");
+    } finally {
+      setArticleLoading(false);
+    }
+  };
+
+  const closeArticleModal = () => {
+    setArticleModalOpen(false);
   };
 
   return (
@@ -312,15 +385,17 @@ export default function Home() {
       )}
 
       <div className={`z-10 w-full max-w-5xl text-center space-y-8 transition-all duration-500 ${articles.length > 0 || activeTab === 'gradient' || activeTab === 'global' || activeTab === 'sources' ? 'mt-0' : 'mt-[20vh]'}`}>
-        <h1 className="text-6xl md:text-8xl lg:text-[7rem] font-extrabold tracking-tighter text-white mb-6 relative group inline-block whitespace-nowrap">
-          The Local{" "}
-          <span className="relative inline-block text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-500 to-purple-500 transition-all duration-700 ease-out group-hover:drop-shadow-[0_0_35px_rgba(99,102,241,0.8)] group-hover:scale-[0.96] group-hover:translate-y-1">
-            Minima
-          </span>
-        </h1>
+        <div className="flex justify-center">
+          <h1 className="text-6xl md:text-8xl lg:text-[8rem] font-extrabold tracking-tighter text-white mb-6 relative group inline-block whitespace-nowrap">
+            The Local{" "}
+            <span className="relative inline-block text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-500 to-purple-500 transition-all duration-700 ease-out group-hover:drop-shadow-[0_0_35px_rgba(99,102,241,0.8)] group-hover:scale-[0.96] group-hover:translate-y-1">
+              Minima
+            </span>
+          </h1>
+        </div>
         {articles.length === 0 && activeTab === 'search' && !searchedQuery && (
           <p className="text-lg text-neutral-400 max-w-xl mx-auto">
-            Enter a topic and uncover the narratives across today's news.
+            Enter a topic and uncover the narratives across today&apos;s news.
           </p>
         )}
 
@@ -427,22 +502,34 @@ export default function Home() {
                     {a.match_score}% Match
                   </div>
                 </div>
-                <p className="text-neutral-400 text-sm mb-3 line-clamp-3">{(a.body || "").slice(0, 300)}...</p>
+                <p className="text-neutral-400 text-sm mb-3 line-clamp-3">
+                  {((a.body || "").trim() || "Full article text is available in the reader view.").slice(0, 300)}
+                  {(a.body || "").trim().length > 0 ? "..." : ""}
+                </p>
                 <div className="flex justify-between items-center mt-auto">
                    <div className="text-xs text-neutral-500 uppercase flex flex-wrap items-center gap-2">
                       <span className="font-bold text-neutral-300 bg-neutral-800 px-2 py-0.5 rounded-sm">{a.source}</span>
                       {a.publish_date && <span>• {new Date(a.publish_date).toLocaleDateString()}</span>}
                    </div>
-                   {a.url && (
-                      <a 
-                        href={a.url} 
-                        target="_blank" 
-                        rel="noreferrer" 
-                        className="flex items-center gap-1 text-blue-400 hover:text-blue-300 bg-blue-900/10 px-3 py-1 rounded-full transition-colors text-xs font-semibold"
+                   <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openArticleDetail(a.id)}
+                        className="flex items-center gap-1 text-emerald-300 hover:text-emerald-200 bg-emerald-900/20 px-3 py-1 rounded-full transition-colors text-xs font-semibold cursor-pointer"
                       >
-                         <LinkIcon className="w-3 h-3" /> Read Article
-                      </a>
-                   )}
+                         <BookOpenText className="w-3 h-3" /> Read Full Text
+                      </button>
+                      {a.url && (
+                        <a 
+                          href={a.url} 
+                          target="_blank" 
+                          rel="noreferrer" 
+                          className="flex items-center gap-1 text-blue-400 hover:text-blue-300 bg-blue-900/10 px-3 py-1 rounded-full transition-colors text-xs font-semibold"
+                        >
+                           <LinkIcon className="w-3 h-3" /> Original Link
+                        </a>
+                      )}
+                   </div>
                 </div>
                 {a.sentiment && (
                   <div className="mt-4 pt-3 border-t border-neutral-800 flex items-center justify-between gap-3">
@@ -469,11 +556,112 @@ export default function Home() {
             <GlobalMaxima key={searchedQuery} query={searchedQuery} localMode={localMode} />
          </div>
       )}
-      
       {activeTab === "sources" && (
          <div className="w-full mt-12 mb-20 animate-in fade-in duration-500">
             <SourceLens key={searchedQuery} query={searchedQuery} localMode={localMode} />
          </div>
+      )}
+
+      {articleModalOpen && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center px-4 py-6 sm:px-6"
+          onClick={closeArticleModal}
+        >
+          <div className="absolute inset-0 bg-neutral-950/35 backdrop-blur-[3px]" />
+          <div
+            className="relative z-10 flex h-[86vh] w-full max-w-4xl flex-col overflow-hidden rounded-[28px] border border-white/10 bg-neutral-950/88 shadow-[0_24px_120px_rgba(0,0,0,0.45)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex shrink-0 items-center justify-between gap-4 border-b border-white/10 bg-gradient-to-r from-neutral-950 via-neutral-900 to-neutral-950 px-5 py-4 sm:px-7">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.28em] text-cyan-300/70">Article Reader</p>
+                <h2 className="mt-1 text-lg font-semibold text-white sm:text-xl">
+                  {selectedArticle?.title || "Loading article"}
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={closeArticleModal}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/5 text-neutral-300 transition-colors hover:bg-white/10 hover:text-white cursor-pointer"
+                aria-label="Close article reader"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-hidden">
+              {articleLoading && (
+                <div className="flex h-full min-h-72 flex-col items-center justify-center px-5 py-5 text-center sm:px-7 sm:py-6">
+                  <Loader2 className="mb-4 h-10 w-10 animate-spin text-cyan-400" />
+                  <p className="text-sm text-neutral-400">Retrieving full article text...</p>
+                </div>
+              )}
+
+              {articleError && !articleLoading && (
+                <div className="px-5 py-5 sm:px-7 sm:py-6">
+                  <div className="rounded-2xl border border-red-900/70 bg-red-950/40 p-6 text-center">
+                    <p className="text-lg font-medium text-red-100">Error loading article</p>
+                    <p className="mt-2 text-sm text-red-300/80">{articleError}</p>
+                  </div>
+                </div>
+              )}
+
+              {selectedArticle && !articleLoading && !articleError && (
+                <div className="flex h-full min-h-0 flex-col animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  <div className="shrink-0 px-5 pb-4 pt-5 sm:px-7 sm:pb-5 sm:pt-6">
+                    <div className="mb-6 flex flex-wrap items-center gap-3">
+                      <span className="rounded-full border border-cyan-900/50 bg-cyan-900/25 px-3 py-1 text-xs font-bold uppercase tracking-widest text-cyan-300">
+                        {selectedArticle.source || "Unknown Source"}
+                      </span>
+                      {selectedArticle.publish_date && (
+                        <span className="text-sm text-neutral-500">
+                          {new Date(selectedArticle.publish_date).toLocaleDateString()}
+                        </span>
+                      )}
+                      {selectedArticle.sentiment && (
+                        <span className={`rounded-full border px-3 py-1 text-xs font-bold ${getSentimentBadgeStyle(selectedArticle.sentiment.sentiment)}`}>
+                          {selectedArticle.sentiment.label}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="min-h-0 flex-1 px-5 pb-4 sm:px-7">
+                    <div className="h-full overflow-y-auto overscroll-contain rounded-[24px] border border-white/8 bg-white/[0.03] p-5 [scrollbar-gutter:stable] sm:p-7">
+                      <div className="space-y-5 text-[15px] leading-8">
+                        {formatTextIntoParagraphs(
+                          selectedArticle.body || selectedArticle.description || "Content unavailable."
+                        ).map((paragraph, index) =>
+                          paragraph.trim() ? (
+                            <p key={index} className="text-neutral-300">
+                              {paragraph}
+                            </p>
+                          ) : null
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {selectedArticle.url && (
+                    <div className="shrink-0 border-t border-white/8 bg-neutral-950/95 px-5 py-4 sm:px-7">
+                      <div className="flex justify-end">
+                        <a
+                          href={selectedArticle.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/15 px-4 py-2 text-sm font-medium text-blue-200 transition-colors hover:bg-blue-500/25 hover:text-white"
+                        >
+                          Original Link
+                          <ExternalLink className="h-4 w-4" />
+                        </a>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
