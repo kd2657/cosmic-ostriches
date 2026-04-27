@@ -26,6 +26,7 @@ from ml import vectorize_and_store, process_batch_cluster, query_local_database,
 from sentiment import SentimentClassifier
 from cluster_stream import stream_search_pipeline
 from fastapi.responses import StreamingResponse
+from logger import log_request
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -91,6 +92,7 @@ def attach_article_sentiment(articles):
     return articles
 
 @app.post("/api/articles")
+@log_request
 def run_article_feed(req: ArticleRequest):
     try:
         is_offline_cache = req.force_local
@@ -134,6 +136,7 @@ def run_article_feed(req: ArticleRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/search")
+@log_request
 def run_search_pipeline(req: SearchRequest):
     try:
         # Step 1: Fetch from NewsAPI.org
@@ -177,6 +180,7 @@ def run_search_pipeline(req: SearchRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/search/stream")
+@log_request
 async def stream_search(req: SearchRequest):
     """
     Experimental SSE endpoint for narrative synthesis.
@@ -195,6 +199,7 @@ async def stream_search(req: SearchRequest):
     )
 
 @app.get("/api/daily-gradient")
+@log_request
 def get_daily_gradient(force_local: bool = False):
     try:
         articles = []
@@ -295,6 +300,7 @@ def fetch_single_article(article_id: str):
     return {"status": "success", "article": data}
 
 @app.post("/api/source-analysis")
+@log_request
 def run_source_analysis(req: SearchRequest):
     try:
         is_offline_cache = req.force_local
