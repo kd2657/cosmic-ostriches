@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Loader2, BarChart2, Compass, Layers, Database, WifiOff, Globe, Link as LinkIcon, Eye, BookOpenText, X, ExternalLink, ThumbsUp, ThumbsDown } from "lucide-react";
+import { Search, Loader2, BarChart2, Compass, Layers, Database, WifiOff, Globe, Link as LinkIcon, Eye, BookOpenText, X, ExternalLink, ThumbsUp, ThumbsDown, ChevronDown, ChevronUp, SlidersHorizontal } from "lucide-react";
 import DailyGradient from "@/components/DailyGradient";
 import GlobalMaxima from "@/components/GlobalMaxima";
 import SourceLens from "@/components/SourceLens";
@@ -240,6 +240,9 @@ export default function Home() {
   const [showBoot, setShowBoot] = useState(true);
   const [activeTab, setActiveTab] = useState<"search" | "gradient" | "global" | "recommended" | "sources">("search");
   const [localMode, setLocalMode] = useState(false);
+  const [useSentiment, setUseSentiment] = useState(false);
+  const [includeBodies, setIncludeBodies] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
   const [articleModalOpen, setArticleModalOpen] = useState(false);
   const [articleLoading, setArticleLoading] = useState(false);
@@ -318,7 +321,7 @@ export default function Home() {
       const res = await fetch("http://localhost:8000/api/articles", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query, force_local: localMode })
+        body: JSON.stringify({ query, force_local: localMode, use_sentiment: useSentiment, include_bodies: includeBodies })
       });
       if (!res.ok) throw new Error("Fetch failed");
       const json = await res.json();
@@ -487,29 +490,66 @@ export default function Home() {
         </div>
 
         {(activeTab === "search" || activeTab === "global" || activeTab === "sources") && (
-          <form onSubmit={handleSearch} className="relative w-full max-w-3xl mx-auto animate-in fade-in duration-500">
-            <div className="relative flex items-center">
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={backendReady ? (activeTab === "global" ? "Enter a topic to explore global news narratives" : activeTab === "sources" ? "Enter a topic to analyze news sources" : "e.g. Artificial Intelligence, Global Economy...") : "Warming up AI vector models..."}
-              className="w-full pl-6 pr-32 py-4 bg-neutral-900/80 border border-neutral-800 rounded-2xl text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-lg shadow-xl backdrop-blur-sm disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={loading || !backendReady}
-            />
-            <button
-              type="submit"
-              disabled={loading || !query.trim() || !backendReady}
-              className="absolute right-2 px-6 py-2 bg-white text-black font-semibold rounded-xl hover:bg-neutral-200 transition-colors disabled:opacity-50 flex items-center gap-2 cursor-pointer"
-            >
-                {loading ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : (
-                "Search"
-              )}
-            </button>
+          <div className="w-full max-w-4xl mx-auto flex flex-col relative">
+            <div className="w-full flex items-center gap-3">
+              <form onSubmit={handleSearch} className="flex-1 relative animate-in fade-in duration-500">
+                <div className="relative flex items-center">
+                  <input
+                    type="text"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder={backendReady ? (activeTab === "global" ? "Enter a topic to explore global news narratives" : activeTab === "sources" ? "Enter a topic to analyze news sources" : "e.g. Artificial Intelligence, Global Economy...") : "Warming up AI vector models..."}
+                    className="w-full pl-6 pr-32 py-4 bg-neutral-900/80 border border-neutral-800 rounded-2xl text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-lg shadow-xl backdrop-blur-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={loading || !backendReady}
+                  />
+                  <button
+                    type="submit"
+                    disabled={loading || !query.trim() || !backendReady}
+                    className="absolute right-2 px-6 py-2 bg-white text-black font-semibold rounded-xl hover:bg-neutral-200 transition-colors disabled:opacity-50 flex items-center gap-2 cursor-pointer"
+                  >
+                    {loading ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      "Search"
+                    )}
+                  </button>
+                </div>
+              </form>
+              <div className="relative">
+                <button 
+                  onClick={() => setShowSettings(!showSettings)}
+                  className={`flex-shrink-0 p-4 rounded-2xl border transition-all duration-300 shadow-xl backdrop-blur-sm ${showSettings ? 'bg-blue-600/20 border-blue-500 text-blue-400' : 'bg-neutral-900/80 border-neutral-800 text-neutral-500 hover:text-neutral-400 hover:bg-neutral-800/80'}`}
+                  title="Search Settings"
+                >
+                  <SlidersHorizontal className="w-6 h-6" />
+                </button>
+
+                {showSettings && (
+                  <div className="absolute right-0 top-full mt-3 w-64 bg-neutral-900/95 border border-neutral-800 rounded-2xl p-5 shadow-[0_20px_50px_rgba(0,0,0,0.5)] backdrop-blur-xl z-50 animate-in fade-in zoom-in-95 duration-200">
+                    <h4 className="text-[10px] font-bold text-neutral-500 uppercase tracking-[0.2em] mb-4 pb-2 border-b border-neutral-800/50">Search Settings</h4>
+                    <div className="flex flex-col gap-5">
+                      <label className="flex items-center justify-between cursor-pointer group">
+                        <span className="text-xs font-semibold text-neutral-300 group-hover:text-white transition-colors">Sentiment Analysis</span>
+                        <div className="relative">
+                          <input type="checkbox" className="sr-only" checked={useSentiment} onChange={(e) => setUseSentiment(e.target.checked)} />
+                          <div className={`block w-9 h-5 rounded-full border transition-colors ${useSentiment ? 'bg-blue-600/40 border-blue-500/50' : 'bg-neutral-950 border-neutral-800'}`}></div>
+                          <div className={`absolute left-1 top-1 w-3 h-3 rounded-full transition-transform ${useSentiment ? 'transform translate-x-4 bg-blue-200' : 'bg-neutral-600'}`}></div>
+                        </div>
+                      </label>
+                      <label className="flex items-center justify-between cursor-pointer group">
+                        <span className="text-xs font-semibold text-neutral-300 group-hover:text-white transition-colors">Full Article Bodies</span>
+                        <div className="relative">
+                          <input type="checkbox" className="sr-only" checked={includeBodies} onChange={(e) => setIncludeBodies(e.target.checked)} />
+                          <div className={`block w-9 h-5 rounded-full border transition-colors ${includeBodies ? 'bg-blue-600/40 border-blue-500/50' : 'bg-neutral-950 border-neutral-800'}`}></div>
+                          <div className={`absolute left-1 top-1 w-3 h-3 rounded-full transition-transform ${includeBodies ? 'transform translate-x-4 bg-blue-200' : 'bg-neutral-600'}`}></div>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
-        </form>
         )}
         
         {activeTab === "search" && articles.length > 0 && (
@@ -544,8 +584,14 @@ export default function Home() {
                   </div>
                 </div>
                 <p className="text-neutral-400 text-sm mb-3 line-clamp-3">
-                  {((a.body || "").trim() || "Full article text is available in the reader view.").slice(0, 300)}
-                  {(a.body || "").trim().length > 0 ? "..." : ""}
+                  {a.body && a.body.trim() ? (
+                    <>
+                      {a.body.trim().slice(0, 300)}
+                      {a.body.trim().length > 300 ? "..." : ""}
+                    </>
+                  ) : (
+                    <span className="italic text-neutral-500 font-medium">Full article text hidden. Available in reader view.</span>
+                  )}
                 </p>
                 <div className="flex justify-between items-center mt-auto">
                    <div className="text-xs text-neutral-500 uppercase flex flex-wrap items-center gap-2">
@@ -612,6 +658,8 @@ export default function Home() {
           </div>
         </div>
       )}
+
+
 
       {activeTab === "recommended" && (
         <RecommendedDisplay

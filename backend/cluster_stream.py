@@ -34,19 +34,15 @@ async def stream_search_pipeline(query: str, algorithm: str, k: Optional[int], d
             articles = query_local_database(query)
         else:
             try:
-                # 1. Fetch live news (Primary + RSS Fallback)
+                # 1. Fetch live news (Primary API -> RSS Fallback internally handled)
                 live_articles = fetch_news(query)
                 
-                # 2. Fetch local historical news
-                local_articles = query_local_database(query)
-                
-                # 3. Merge: Prioritize live RSS, then append local DB
-                seen_ids = {a["id"] for a in live_articles}
-                articles = live_articles
-                for a in local_articles:
-                    if a["id"] not in seen_ids:
-                        articles.append(a)
-                        seen_ids.add(a["id"])
+                # 2. Strict Fallback: Only use local DB if live fetch completely fails or is empty
+                if live_articles:
+                    articles = live_articles
+                else:
+                    articles = query_local_database(query)
+                    is_offline_cache = True
 
                 if live_articles:
                     yield f"data: {json.dumps({'event': 'stage', 'data': {'stage': '🧬 Embedding discourse vectors', 'progress': 25}})}\n\n"
