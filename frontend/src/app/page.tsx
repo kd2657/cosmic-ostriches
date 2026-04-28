@@ -497,14 +497,14 @@ export default function Home() {
                  setArticles([]);
               }}
               disabled={!backendReady}
-              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed ${activeTab === 'sources' ? 'bg-cyan-600 text-white shadow-[0_0_20px_rgba(8,145,178,0.4)] border-cyan-500' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
+              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed group ${activeTab === 'sources' ? 'bg-cyan-600 text-white shadow-[0_0_20px_rgba(8,145,178,0.4)] border-cyan-500' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800 hover:active-signal-cyan'}`}
            >
               {backendReady ? <Eye className="w-5 h-5 shrink-0" /> : <Loader2 className="w-5 h-5 shrink-0 animate-spin" />} Latent Bias
             </button>
             <button
               onClick={() => { setActiveTab("recommended"); setQuery(""); setSearchedQuery(""); setArticles([]); }}
               disabled={!backendReady}
-              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed ${activeTab === 'recommended' ? 'bg-purple-600 text-white shadow-[0_0_20px_rgba(147,51,234,0.4)] border-purple-500' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
+              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed group ${activeTab === 'recommended' ? 'bg-purple-600 text-white shadow-[0_0_20px_rgba(147,51,234,0.4)] border-purple-500' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800 hover:active-signal-purple'}`}
             >
               {backendReady ? <ThumbsUp className="w-5 h-5 shrink-0" /> : <Loader2 className="w-5 h-5 shrink-0 animate-spin" />} Recommended
             </button>
@@ -582,11 +582,32 @@ export default function Home() {
           </div>
         )}
         
-        {activeTab === "search" && articles.length > 0 && (
+        {loading && (
+           <div className="z-10 w-full max-w-5xl mx-auto mt-12 space-y-6 pb-20 animate-in fade-in duration-500">
+             <div className="flex items-center gap-3 mb-8">
+                <div className="h-1 w-full bg-neutral-900 rounded-full overflow-hidden relative">
+                   <div className="absolute inset-0 bg-gradient-to-r from-transparent via-blue-500 to-transparent w-1/2 animate-scanline" />
+                </div>
+                <span className="text-[10px] font-mono text-blue-500 whitespace-nowrap animate-pulse">REQUEST PROCESSING...</span>
+             </div>
+             {[1, 2, 3].map((i) => (
+                <div key={i} className="bg-neutral-900/30 border border-neutral-800/50 rounded-xl p-6 relative overflow-hidden">
+                   <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full animate-[shimmer_2s_infinite]" />
+                   <div className="h-6 w-3/4 bg-neutral-800 rounded-md mb-4 animate-pulse" />
+                   <div className="space-y-2">
+                      <div className="h-4 w-full bg-neutral-800/50 rounded-md animate-pulse" />
+                      <div className="h-4 w-5/6 bg-neutral-800/50 rounded-md animate-pulse" />
+                   </div>
+                </div>
+             ))}
+           </div>
+        )}
+
+        {activeTab === "search" && articles.length > 0 && !loading && (
           <div className="mt-8 flex justify-center animate-in fade-in slide-in-from-bottom-4 duration-700">
             <button
                onClick={() => router.push(`/cluster?q=${encodeURIComponent(searchedQuery)}&local=${localMode}&sentiment=${useSentiment}&bodies=${includeBodies}&parameterize=${parameterizeQuery}`)}
-               className="px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold rounded-xl shadow-lg transition-transform hover:scale-105 flex items-center gap-2 cursor-pointer"
+               className="px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold rounded-xl shadow-lg transition-transform hover:scale-105 flex items-center gap-2 cursor-pointer active-signal-purple"
             >
                <BarChart2 className="w-5 h-5" />
                Cluster Narratives
