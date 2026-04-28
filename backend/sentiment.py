@@ -7,6 +7,9 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
 
 from transformers import pipeline
 from transformers.pipelines.base import Pipeline
+from dotenv import load_dotenv
+
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 DEFAULT_SENTIMENT_MODEL = os.environ.get(
     "SENTIMENT_MODEL",

@@ -1,8 +1,9 @@
 import os
+from dotenv import load_dotenv
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 import sys
 from contextlib import asynccontextmanager
 
-from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -14,10 +15,6 @@ from routers.user_routes import user_router
 # Suppress low-level library warnings (OpenMP/MKL)
 os.environ["KMP_WARNINGS"] = "0"
 os.environ["OMP_WARNINGS"] = "0"
-
-# Load environment variables
-load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
-load_dotenv()
 
 if sys.platform != "win32":
     import warnings
