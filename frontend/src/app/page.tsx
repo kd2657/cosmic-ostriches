@@ -434,7 +434,13 @@ export default function Home() {
         </div>
       )}
 
-      <div className={`z-10 w-full max-w-5xl text-center space-y-8 transition-all duration-500 ${articles.length > 0 || activeTab === 'gradient' || activeTab === 'global' || activeTab === 'recommended' || activeTab === 'sources' ? 'mt-0' : 'mt-[20vh]'}`}>
+      <div className={`z-10 w-full max-w-5xl text-center space-y-8 transition-all duration-500 ${
+        (activeTab === 'search' && articles.length > 0) || 
+        (activeTab === 'global' && searchedQuery) || 
+        (activeTab === 'sources' && searchedQuery) || 
+        (activeTab === 'recommended' && recommended.length > 0) || 
+        (activeTab === 'gradient') 
+        ? 'mt-0' : 'mt-[20vh]'}`}>
         <div className="flex justify-center">
           <h1 className="text-6xl md:text-8xl lg:text-[8rem] font-extrabold tracking-tighter text-white mb-6 relative group inline-block whitespace-nowrap">
             The Local{" "}
@@ -443,11 +449,9 @@ export default function Home() {
             </span>
           </h1>
         </div>
-        {articles.length === 0 && activeTab === 'search' && !searchedQuery && (
-          <p className="text-lg text-neutral-400 max-w-xl mx-auto">
-            Enter a topic and uncover the narratives across today&apos;s news.
-          </p>
-        )}
+        <p className="text-lg md:text-xl text-neutral-400 max-w-2xl mx-auto leading-relaxed tracking-tight animate-in fade-in slide-in-from-top-2 duration-1000">
+          Break through the noise. Uncover the narratives across today&apos;s news.
+        </p>
 
         {/* Tab row — breaks out of max-w-3xl visually using full viewport width */}
         <div className="flex justify-center slide-in-from-bottom-4 animate-in fade-in duration-500">
@@ -461,7 +465,7 @@ export default function Home() {
             <button
               onClick={() => { setActiveTab("gradient"); setQuery(""); setSearchedQuery(""); setArticles([]); }}
               disabled={!backendReady}
-              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed ${activeTab === 'gradient' ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
+              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed ${activeTab === 'gradient' ? 'bg-emerald-600 text-white shadow-[0_0_20px_rgba(16,185,129,0.4)] border-emerald-500' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
             >
               {backendReady ? <Compass className="w-5 h-5 shrink-0" /> : <Loader2 className="w-5 h-5 shrink-0 animate-spin" />} Daily Gradient
             </button>
@@ -472,14 +476,7 @@ export default function Home() {
             >
               {backendReady ? <Globe className="w-5 h-5 shrink-0" /> : <Loader2 className="w-5 h-5 shrink-0 animate-spin" />} Global Maxima
             </button>
-            <button
-              onClick={() => { setActiveTab("recommended"); setQuery(""); setSearchedQuery(""); setArticles([]); }}
-              disabled={!backendReady}
-              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed ${activeTab === 'recommended' ? 'bg-emerald-600 text-white shadow-[0_0_20px_rgba(16,185,129,0.4)] border-emerald-500' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
-            >
-              {backendReady ? <ThumbsUp className="w-5 h-5 shrink-0" /> : <Loader2 className="w-5 h-5 shrink-0 animate-spin" />} Recommended
-            </button>
-           <button 
+            <button 
               onClick={() => {
                  setActiveTab("sources");
                  setQuery("");
@@ -487,9 +484,16 @@ export default function Home() {
                  setArticles([]);
               }}
               disabled={!backendReady}
-              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed ${activeTab === 'sources' ? 'bg-emerald-600 text-white shadow-[0_0_20px_rgba(16,185,129,0.4)] border-emerald-500' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
+              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed ${activeTab === 'sources' ? 'bg-cyan-600 text-white shadow-[0_0_20px_rgba(8,145,178,0.4)] border-cyan-500' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
            >
-              {backendReady ? <Eye className="w-5 h-5 shrink-0" /> : <Loader2 className="w-5 h-5 shrink-0 animate-spin" />} Source Lens
+              {backendReady ? <Eye className="w-5 h-5 shrink-0" /> : <Loader2 className="w-5 h-5 shrink-0 animate-spin" />} Latent Bias
+            </button>
+            <button
+              onClick={() => { setActiveTab("recommended"); setQuery(""); setSearchedQuery(""); setArticles([]); }}
+              disabled={!backendReady}
+              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed ${activeTab === 'recommended' ? 'bg-purple-600 text-white shadow-[0_0_20px_rgba(147,51,234,0.4)] border-purple-500' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
+            >
+              {backendReady ? <ThumbsUp className="w-5 h-5 shrink-0" /> : <Loader2 className="w-5 h-5 shrink-0 animate-spin" />} Recommended
             </button>
           </div>
         </div>
@@ -503,7 +507,7 @@ export default function Home() {
                     type="text"
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
-                    placeholder={backendReady ? (activeTab === "global" ? "Enter a topic to explore global news narratives" : activeTab === "sources" ? "Enter a topic to analyze news sources" : "e.g. Artificial Intelligence, Global Economy...") : "Warming up AI vector models..."}
+                    placeholder={backendReady ? (activeTab === "global" ? "Enter a topic to explore global news narratives" : activeTab === "sources" ? "Enter a topic to analyze source diversity" : "e.g. Artificial Intelligence, Global Economy...") : "Warming up AI vector models..."}
                     className="w-full pl-6 pr-32 py-4 bg-neutral-900/80 border border-neutral-800 rounded-2xl text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-lg shadow-xl backdrop-blur-sm disabled:opacity-50 disabled:cursor-not-allowed"
                     disabled={loading || !backendReady}
                   />
