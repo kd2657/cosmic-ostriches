@@ -66,10 +66,16 @@ class SearchRequest(BaseModel):
     k: Optional[int] = None
     dim_reduction: str = "umap"
     force_local: Optional[bool] = False
+    use_sentiment: Optional[bool] = False
+    include_bodies: Optional[bool] = False
+    parameterize_query: Optional[bool] = False
 
 class ArticleRequest(BaseModel):
     query: str
     force_local: Optional[bool] = False
+    use_sentiment: Optional[bool] = False
+    include_bodies: Optional[bool] = False
+    parameterize_query: Optional[bool] = False
 
 
 def attach_article_sentiment(articles):
@@ -108,21 +114,12 @@ def run_article_feed(req: ArticleRequest):
         else:
             try:
                 live_articles = fetch_news(req.query)
-                local_articles = query_local_database(req.query)
-                
-                # Merge logic: prioritize live RSS, then append local DB
-                # Using a set of IDs to prevent duplicates
-                seen_ids = {a["id"] for a in live_articles}
-                articles = live_articles
-                for a in local_articles:
-                    if a["id"] not in seen_ids:
-                        articles.append(a)
-                        seen_ids.add(a["id"])
-                
                 if live_articles:
-                    # Only vectorize the NEW live articles (RSS)
-                    vectorize_and_store(live_articles)
+                    # Clone dicts immediately from cache to prevent ANY downstream mutation
+                    articles = [dict(a) for a in live_articles]
+                    vectorize_and_store(articles)
                 else:
+                    articles = query_local_database(req.query)
                     is_offline_cache = True
             except Exception as api_err:
                 print(f"Fetch failure: {api_err}")
@@ -136,7 +133,32 @@ def run_article_feed(req: ArticleRequest):
             
         # Compute match percentages natively across all embeddings
         ranked_articles = compute_similarity_scores(req.query, articles)
-        ranked_articles = attach_article_sentiment(ranked_articles)
+
+        # Strict quality filter: Always purge low-confidence matches (<30%)
+        ranked_articles = [a for a in ranked_articles if a.get("match_score", 0) >= 30]
+        
+        if getattr(req, "parameterize_query", False):
+            from ml import extract_query_parameters
+            params = extract_query_parameters(req.query)
+            if params["location"] or params["time"]:
+                filtered = []
+                for a in ranked_articles:
+                    text_to_search = (a.get("title", "") + " " + a.get("body", "")).lower()
+                    keep = True
+                    if params["location"] and params["location"].lower() not in text_to_search:
+                        keep = False
+                    if params["time"] and params["time"] not in a.get("publish_date", ""):
+                        keep = False
+                    if keep:
+                        filtered.append(a)
+                ranked_articles = filtered
+        
+        if req.use_sentiment:
+            ranked_articles = attach_article_sentiment(ranked_articles)
+            
+        if not req.include_bodies:
+            for a in ranked_articles:
+                a["body"] = ""
         
         return {"status": "success", "articles": ranked_articles, "is_offline_cache": is_offline_cache}
     except Exception as e:
@@ -172,13 +194,19 @@ def run_search_pipeline(req: SearchRequest):
             return {"status": "success", "results": [], "is_offline_cache": is_offline_cache}
             
         # Step 2: Sentiment, Cluster & Reduce Dimensionality
-        articles = attach_article_sentiment(articles)
+        if req.use_sentiment:
+            articles = attach_article_sentiment(articles)
         results = process_batch_cluster(
             articles, 
             method=req.algorithm, 
             cluster_k=req.k, 
             dim_reduction=req.dim_reduction
         )
+        
+        if not req.include_bodies:
+            for pt in results.get("points", []):
+                pt["body"] = ""
+
         
         results["is_offline_cache"] = is_offline_cache
         
@@ -199,7 +227,9 @@ async def stream_search(req: SearchRequest):
             req.algorithm, 
             req.k, 
             req.dim_reduction, 
-            req.force_local
+            req.force_local,
+            req.use_sentiment,
+            req.include_bodies
         ),
         media_type="text/event-stream",
         headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"}

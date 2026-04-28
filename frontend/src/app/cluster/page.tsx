@@ -82,6 +82,9 @@ function ClusterContent() {
   const router = useRouter();
   const query = searchParams.get("q") || "";
   const localParam = searchParams.get("local") === "true";
+  const sentimentParam = searchParams.get("sentiment") === "true";
+  const bodiesParam = searchParams.get("bodies") === "true";
+  const parameterizeParam = searchParams.get("parameterize") === "true";
   
   const [data, setData] = useState<any[]>([]);
   const [summaries, setSummaries] = useState<Record<string, {title: string, summary: string} | string>>({});
@@ -127,7 +130,15 @@ function ClusterContent() {
     setStreamProgress(5);
     
     try {
-      const payload: any = { query, algorithm: algo, dim_reduction: dimRed, force_local: localParam };
+      const payload: any = { 
+        query, 
+        algorithm: algo, 
+        dim_reduction: dimRed, 
+        force_local: localParam,
+        use_sentiment: sentimentParam,
+        include_bodies: bodiesParam,
+        parameterize_query: parameterizeParam
+      };
       if (k !== "") payload.k = k;
       
       const res = await fetch("http://localhost:8000/api/search/stream", {
@@ -482,15 +493,7 @@ function ClusterContent() {
                  const isObj = typeof summaryData === 'object' && summaryData !== null;
                  
                  const title = isObj ? (summaryData as { title: string }).title : `Narrative ${clusterId + 1}`;
-                 let text = isObj ? (summaryData as { summary: string }).summary : (summaryData || "");
-
-                 if (typeof text === 'string') {
-                   if (text.includes('.')) {
-                     text = text.substring(0, text.lastIndexOf('.') + 1);
-                   } else if (text && text !== "Narrative summary unavailable.") {
-                     text = text + '.';
-                   }
-                 }
+                 let text = isObj ? (summaryData as { summary: string }).summary : (summaryData || "Narrative summary unavailable.");
                  
                  const clusterPoints = data.filter(d => d.cluster === clusterId);
                  const sources = Array.from(new Set(clusterPoints.map(d => d.source))).filter(Boolean);

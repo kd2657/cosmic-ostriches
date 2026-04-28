@@ -175,27 +175,47 @@ def compute_similarity_scores(query: str, articles: List[Dict[str, Any]]) -> Lis
     if not articles:
         return []
     
-    # Do not force convert to PyTorch tensor here so numpy can bridge them safely
-    query_emb = _get_model().encode(query)
+    cross_encoder = model_manager.cross_encoder
     
-    ids = [a["id"] for a in articles]
-    data = collection.get(ids=ids, include=["embeddings"])
+    # 1. Format pairs for the Cross-Encoder: (Query, Article Text)
+    pairs = [[query, a.get("embed_text", f"{a.get('title', '')}. {a.get('body', '')}")] for a in articles]
     
-    if data.get("embeddings") is None or len(data["embeddings"]) == 0:
-        for a in articles:
-            a["match_score"] = 0
-        return articles
-        
-    # Cast explicitly to float32 to match the model's 32-bit dimension typing
-    doc_embs = np.array(data["embeddings"], dtype=np.float32)
-    cosine_scores = util.cos_sim(query_emb, doc_embs)[0]
+    # 2. Predict relevance scores
+    scores = cross_encoder.predict(pairs)
     
+    # 3. Apply sigmoid to convert logits to a 0-100% confidence scale
     for idx, a in enumerate(articles):
-        score = float(cosine_scores[idx]) * 100
-        a["match_score"] = round(max(0, min(100, score)), 1)
+        score = 1.0 / (1.0 + np.exp(-scores[idx])) 
+        a["match_score"] = round(float(score) * 100, 1)
         
     articles.sort(key=lambda x: x["match_score"], reverse=True)
     return articles
+
+def extract_query_parameters(query: str) -> dict:
+    """
+    Uses NER and heuristics to extract location and time from a query.
+    """
+    ner_pipeline = model_manager.ner
+    entities = ner_pipeline(query) if ner_pipeline else []
+    
+    locations = []
+    for ent in entities:
+        if "LOC" in ent["entity_group"] or "LOC" in ent["entity"]:
+            locations.append(ent["word"].replace("##", ""))
+            
+    time_keywords = ["today", "yesterday", "last week", "last month", "this week", "this month", "2023", "2024", "2025"]
+    extracted_time = None
+    for tk in time_keywords:
+        if tk in query.lower():
+            extracted_time = tk
+            break
+            
+    loc_str = " ".join(locations) if locations else None
+    
+    return {
+        "location": loc_str,
+        "time": extracted_time
+    }
 
 class CustomKMeans:
     def __init__(self, n_clusters=8, max_iter=100, random_state=None):
@@ -375,12 +395,12 @@ def _generate_narrative_summaries(cluster_texts: Dict[int, List[str]], client: O
         used_local_fallback = True
         summarizer = _get_summarizer()
         for cid in target_clusters:
-            input_text = cluster_texts[cid][0][:100] if cluster_texts.get(cid) else "Global news."
-            prompt = f"Summarize the context: {input_text}"
+            input_text = cluster_texts[cid][0][:500] if cluster_texts.get(cid) else "Global news."
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                out = summarizer(prompt, max_new_tokens=25, temperature=0.3, do_sample=True, return_full_text=False, pad_token_id=50256)
-            generated = out[0]["generated_text"].strip().split("\n")[0]
+                inputs = summarizer["tokenizer"](f"summarize: {input_text}", return_tensors="pt", max_length=512, truncation=True)
+                outputs = summarizer["model"].generate(**inputs, max_length=60, min_length=10, do_sample=False)
+            generated = summarizer["tokenizer"].decode(outputs[0], skip_special_tokens=True).strip()
             summaries[str(cid)] = generated
 
     return summaries, used_local_fallback

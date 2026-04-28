@@ -7,6 +7,7 @@ in a background thread so the FastAPI server can accept requests immediately.
 """
 
 import time
+import os
 from threading import Lock, Thread
 from sentence_transformers import SentenceTransformer
 from transformers import pipeline
@@ -20,9 +21,11 @@ class ModelManager:
 
     STAGES = [
         {"id": "chroma", "label": "CONNECTING TO VECTOR DATABASE", "pct": 10},
-        {"id": "vectorizer", "label": "LOADING SENTENCETRANSFORMER MODEL (all-MiniLM-L6-v2)", "pct": 35},
-        {"id": "summarizer", "label": "INITIALIZING NLP SUMMARIZATION PIPELINE (DistilGPT2)", "pct": 50},
-        {"id": "sentiment", "label": "LOADING SENTIMENT ANALYSIS MODEL (Roberta)", "pct": 95},
+        {"id": "vectorizer", "label": "LOADING SENTENCETRANSFORMER MODEL (all-MiniLM-L6-v2)", "pct": 25},
+        {"id": "summarizer", "label": "INITIALIZING NLP SUMMARIZATION PIPELINE (Falconsai T5-Small)", "pct": 45},
+        {"id": "sentiment", "label": "LOADING SENTIMENT ANALYSIS MODEL (Roberta)", "pct": 65},
+        {"id": "cross_encoder", "label": "LOADING CROSS-ENCODER RANKING MODEL", "pct": 85},
+        {"id": "ner", "label": "LOADING NER PARAMETERIZATION MODEL", "pct": 95},
         {"id": "ready", "label": "ALL SYSTEMS ONLINE // WELCOME TO THE LOCAL MINIMA", "pct": 100}
     ]
 
@@ -30,6 +33,8 @@ class ModelManager:
         self.model = None
         self.summarizer = None
         self.sentiment = None
+        self.cross_encoder = None
+        self.ner = None
         self._ready = False
         self._current_stage = 0
         self._stage_label = "Waiting for initialization..."
@@ -49,6 +54,7 @@ class ModelManager:
             "label": self._stage_label,
             "pct": self._pct,
             "error": self._error,
+            "api_key_valid": bool(os.getenv("NEWSAPI_AI_KEY"))
         }
 
     def _set_stage(self, index: int):
@@ -71,7 +77,11 @@ class ModelManager:
 
             # Stage 2: DistilGPT2 summarizer
             self._set_stage(2)
-            self.summarizer = pipeline("text-generation", model="distilgpt2")
+            from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+            self.summarizer = {
+                "model": AutoModelForSeq2SeqLM.from_pretrained("Falconsai/text_summarization"),
+                "tokenizer": AutoTokenizer.from_pretrained("Falconsai/text_summarization")
+            }
 
             # Stage 3: Sentiment Classifier
             self._set_stage(3)
@@ -79,8 +89,17 @@ class ModelManager:
             from sentiment import SentimentClassifier
             self.sentiment = SentimentClassifier()
 
-            # Stage 4: Ready
+            # Stage 4: Cross Encoder
             self._set_stage(4)
+            from sentence_transformers import CrossEncoder
+            self.cross_encoder = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+
+            # Stage 5: NER Pipeline
+            self._set_stage(5)
+            self.ner = pipeline("ner", model="dslim/bert-base-NER", aggregation_strategy="simple")
+
+            # Stage 6: Ready
+            self._set_stage(6)
             self._ready = True
 
         except Exception as e:

@@ -16,11 +16,12 @@ from ml import (
     _cluster_pipeline_lock,
     _get_cluster_labels,
     _get_reduced_embeddings,
-    _generate_narrative_summaries
+    _generate_narrative_summaries,
+    compute_similarity_scores
 )
 from google import genai
 
-async def stream_search_pipeline(query: str, algorithm: str, k: Optional[int], dim_reduction: str, force_local: bool):
+async def stream_search_pipeline(query: str, algorithm: str, k: Optional[int], dim_reduction: str, force_local: bool, use_sentiment: bool = False, include_bodies: bool = False, parameterize_query: bool = False):
     """
     Generator that yields SSE-formatted events as it processes the search/clustering pipeline.
     """
@@ -34,19 +35,15 @@ async def stream_search_pipeline(query: str, algorithm: str, k: Optional[int], d
             articles = query_local_database(query)
         else:
             try:
-                # 1. Fetch live news (Primary + RSS Fallback)
+                # 1. Fetch live news (Primary API -> RSS Fallback internally handled)
                 live_articles = fetch_news(query)
                 
-                # 2. Fetch local historical news
-                local_articles = query_local_database(query)
-                
-                # 3. Merge: Prioritize live RSS, then append local DB
-                seen_ids = {a["id"] for a in live_articles}
-                articles = live_articles
-                for a in local_articles:
-                    if a["id"] not in seen_ids:
-                        articles.append(a)
-                        seen_ids.add(a["id"])
+                # 2. Strict Fallback: Only use local DB if live fetch completely fails or is empty
+                if live_articles:
+                    articles = live_articles
+                else:
+                    articles = query_local_database(query)
+                    is_offline_cache = True
 
                 if live_articles:
                     yield f"data: {json.dumps({'event': 'stage', 'data': {'stage': '🧬 Embedding discourse vectors', 'progress': 25}})}\n\n"
@@ -59,6 +56,27 @@ async def stream_search_pipeline(query: str, algorithm: str, k: Optional[int], d
                 print(f"Streaming fetch error: {e}")
                 articles = query_local_database(query)
                 is_offline_cache = True
+                
+        if parameterize_query:
+            from ml import extract_query_parameters
+            params = extract_query_parameters(query)
+            if params["location"] or params["time"]:
+                filtered = []
+                for a in articles:
+                    text_to_search = (a.get("title", "") + " " + a.get("body", "")).lower()
+                    keep = True
+                    if params["location"] and params["location"].lower() not in text_to_search:
+                        keep = False
+                    if params["time"] and params["time"] not in a.get("publish_date", ""):
+                        keep = False
+                    if keep:
+                        filtered.append(a)
+                articles = filtered
+        
+        # Quality Filter: Compute Cross-Encoder scores and purge low-confidence results
+        if articles:
+            articles = compute_similarity_scores(query, articles)
+            articles = [a for a in articles if a.get("match_score", 0) >= 30]
         
         if not articles:
             yield f"data: {json.dumps({'event': 'error', 'data': 'No articles found for the given query.'})}\n\n"
@@ -105,19 +123,25 @@ async def stream_search_pipeline(query: str, algorithm: str, k: Optional[int], d
             chunk = b[:2500] if client else b[:200]
             cluster_texts[cluster_id].append(f"{t}: {chunk}" if b else t)
                 
-            results.append({
+            
+            result_item = {
                 "id": article_id,
                 "title": meta.get("title", "Unknown"),
                 "description": meta.get("description", ""),
                 "url": meta.get("url", ""),
                 "source": meta.get("source", ""),
-                "body": meta.get("body", ""),
                 "publish_date": meta.get("publish_date", ""),
                 "cluster": cluster_id,
                 "x": float(reduced_embeddings[idx][0]),
                 "y": float(reduced_embeddings[idx][1]),
                 "distance_from_center": round(float(article_distances[idx]), 3) if cluster_id != -1 else 0.0
-            })
+            }
+            if include_bodies:
+                result_item["body"] = meta.get("body", "")
+            if use_sentiment and "sentiment" in meta:
+                result_item["sentiment"] = meta["sentiment"]
+                
+            results.append(result_item)
             
         target_clusters = [cid for cid in cluster_texts if cid != -1]
         summaries, used_local_fallback = _generate_narrative_summaries(cluster_texts, client, target_clusters)

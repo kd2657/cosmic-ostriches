@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Loader2, BarChart2, Compass, Layers, Database, WifiOff, Globe, Link as LinkIcon, Eye, BookOpenText, X, ExternalLink, ThumbsUp, ThumbsDown } from "lucide-react";
+import { Search, Loader2, BarChart2, Compass, Layers, Database, WifiOff, Globe, Link as LinkIcon, Eye, BookOpenText, X, ExternalLink, ThumbsUp, ThumbsDown, ChevronDown, ChevronUp, SlidersHorizontal, SearchX, AlertCircle } from "lucide-react";
 import DailyGradient from "@/components/DailyGradient";
 import GlobalMaxima from "@/components/GlobalMaxima";
 import SourceLens from "@/components/SourceLens";
@@ -240,6 +240,11 @@ export default function Home() {
   const [showBoot, setShowBoot] = useState(true);
   const [activeTab, setActiveTab] = useState<"search" | "gradient" | "global" | "recommended" | "sources">("search");
   const [localMode, setLocalMode] = useState(false);
+  const [useSentiment, setUseSentiment] = useState(false);
+  const [includeBodies, setIncludeBodies] = useState(false);
+  const [parameterizeQuery, setParameterizeQuery] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [apiKeyMissing, setApiKeyMissing] = useState(false);
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
   const [articleModalOpen, setArticleModalOpen] = useState(false);
   const [articleLoading, setArticleLoading] = useState(false);
@@ -253,6 +258,7 @@ export default function Home() {
         const res = await fetch("http://localhost:8000/api/status");
         if (res.ok) {
           const data = await res.json();
+          setApiKeyMissing(!data.api_key_valid);
           if (data.ready) {
             setBackendReady(true);
             return; // Stop polling
@@ -318,7 +324,7 @@ export default function Home() {
       const res = await fetch("http://localhost:8000/api/articles", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query, force_local: localMode })
+        body: JSON.stringify({ query, force_local: localMode, use_sentiment: useSentiment, include_bodies: includeBodies, parameterize_query: parameterizeQuery })
       });
       if (!res.ok) throw new Error("Fetch failed");
       const json = await res.json();
@@ -410,23 +416,31 @@ export default function Home() {
          </Tooltip>
       </div>
 
-      {isOfflineCache && (
+      {localMode && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-top-4 fade-in duration-400">
-          {localMode ? (
-            <div className="bg-blue-950 border border-blue-700 text-blue-400 px-4 py-2 rounded-full shadow-2xl text-sm flex items-center gap-3 whitespace-nowrap font-medium pointer-events-auto">
-              <Database className="w-4 h-4 shrink-0 shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
-              Local Mode Enabled. Displaying results from local database.
-            </div>
-          ) : (
-            <div className="bg-yellow-950 border border-yellow-700 text-yellow-500 px-4 py-2 rounded-full shadow-2xl text-sm flex items-center gap-3 whitespace-nowrap font-medium pointer-events-auto">
-              <span className="flex h-2 w-2 rounded-full bg-yellow-500 animate-pulse shrink-0 shadow-[0_0_8px_rgba(234,179,8,1)]"></span>
-              NewsAPI Limit Reached. Displaying locally cached vector-matches.
-            </div>
-          )}
+          <div className="bg-blue-950 border border-blue-700 text-blue-400 px-4 py-2 rounded-full shadow-2xl text-sm flex items-center gap-3 whitespace-nowrap font-medium pointer-events-auto">
+            <Database className="w-4 h-4 shrink-0 shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
+            Local Mode Enabled. Displaying results from local database.
+          </div>
         </div>
       )}
 
-      <div className={`z-10 w-full max-w-5xl text-center space-y-8 transition-all duration-500 ${articles.length > 0 || activeTab === 'gradient' || activeTab === 'global' || activeTab === 'recommended' || activeTab === 'sources' ? 'mt-0' : 'mt-[20vh]'}`}>
+      {apiKeyMissing && !localMode && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-top-4 fade-in duration-400">
+          <div className="bg-yellow-950 border border-yellow-700 text-yellow-500 px-4 py-2 rounded-full shadow-2xl text-sm flex items-center gap-3 whitespace-nowrap font-medium pointer-events-auto">
+            <AlertCircle className="w-4 h-4 shrink-0 shadow-[0_0_8px_rgba(234,179,8,1)]" />
+            Missing NewsAPI Key. Searching via RSS and local database.
+          </div>
+        </div>
+      )}
+
+      <div className={`z-10 w-full max-w-5xl text-center space-y-8 transition-all duration-500 ${
+        (activeTab === 'search' && articles.length > 0) || 
+        (activeTab === 'global' && searchedQuery) || 
+        (activeTab === 'sources' && searchedQuery) || 
+        (activeTab === 'recommended' && recommended.length > 0) || 
+        (activeTab === 'gradient') 
+        ? 'mt-0' : 'mt-[20vh]'}`}>
         <div className="flex justify-center">
           <h1 className="text-6xl md:text-8xl lg:text-[8rem] font-extrabold tracking-tighter text-white mb-6 relative group inline-block whitespace-nowrap">
             The Local{" "}
@@ -435,11 +449,9 @@ export default function Home() {
             </span>
           </h1>
         </div>
-        {articles.length === 0 && activeTab === 'search' && !searchedQuery && (
-          <p className="text-lg text-neutral-400 max-w-xl mx-auto">
-            Enter a topic and uncover the narratives across today&apos;s news.
-          </p>
-        )}
+        <p className="text-lg md:text-xl text-neutral-400 max-w-2xl mx-auto leading-relaxed tracking-tight animate-in fade-in slide-in-from-top-2 duration-1000">
+          Break through the noise. Uncover the narratives across today&apos;s news.
+        </p>
 
         {/* Tab row — breaks out of max-w-3xl visually using full viewport width */}
         <div className="flex justify-center slide-in-from-bottom-4 animate-in fade-in duration-500">
@@ -453,7 +465,7 @@ export default function Home() {
             <button
               onClick={() => { setActiveTab("gradient"); setQuery(""); setSearchedQuery(""); setArticles([]); }}
               disabled={!backendReady}
-              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed ${activeTab === 'gradient' ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
+              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed ${activeTab === 'gradient' ? 'bg-emerald-600 text-white shadow-[0_0_20px_rgba(16,185,129,0.4)] border-emerald-500' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
             >
               {backendReady ? <Compass className="w-5 h-5 shrink-0" /> : <Loader2 className="w-5 h-5 shrink-0 animate-spin" />} Daily Gradient
             </button>
@@ -464,14 +476,7 @@ export default function Home() {
             >
               {backendReady ? <Globe className="w-5 h-5 shrink-0" /> : <Loader2 className="w-5 h-5 shrink-0 animate-spin" />} Global Maxima
             </button>
-            <button
-              onClick={() => { setActiveTab("recommended"); setQuery(""); setSearchedQuery(""); setArticles([]); }}
-              disabled={!backendReady}
-              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed ${activeTab === 'recommended' ? 'bg-emerald-600 text-white shadow-[0_0_20px_rgba(16,185,129,0.4)] border-emerald-500' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
-            >
-              {backendReady ? <ThumbsUp className="w-5 h-5 shrink-0" /> : <Loader2 className="w-5 h-5 shrink-0 animate-spin" />} Recommended
-            </button>
-           <button 
+            <button 
               onClick={() => {
                  setActiveTab("sources");
                  setQuery("");
@@ -479,43 +484,95 @@ export default function Home() {
                  setArticles([]);
               }}
               disabled={!backendReady}
-              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed ${activeTab === 'sources' ? 'bg-emerald-600 text-white shadow-[0_0_20px_rgba(16,185,129,0.4)] border-emerald-500' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
+              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed ${activeTab === 'sources' ? 'bg-cyan-600 text-white shadow-[0_0_20px_rgba(8,145,178,0.4)] border-cyan-500' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
            >
-              {backendReady ? <Eye className="w-5 h-5 shrink-0" /> : <Loader2 className="w-5 h-5 shrink-0 animate-spin" />} Source Lens
+              {backendReady ? <Eye className="w-5 h-5 shrink-0" /> : <Loader2 className="w-5 h-5 shrink-0 animate-spin" />} Latent Bias
+            </button>
+            <button
+              onClick={() => { setActiveTab("recommended"); setQuery(""); setSearchedQuery(""); setArticles([]); }}
+              disabled={!backendReady}
+              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed ${activeTab === 'recommended' ? 'bg-purple-600 text-white shadow-[0_0_20px_rgba(147,51,234,0.4)] border-purple-500' : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
+            >
+              {backendReady ? <ThumbsUp className="w-5 h-5 shrink-0" /> : <Loader2 className="w-5 h-5 shrink-0 animate-spin" />} Recommended
             </button>
           </div>
         </div>
 
         {(activeTab === "search" || activeTab === "global" || activeTab === "sources") && (
-          <form onSubmit={handleSearch} className="relative w-full max-w-3xl mx-auto animate-in fade-in duration-500">
-            <div className="relative flex items-center">
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={backendReady ? (activeTab === "global" ? "Enter a topic to explore global news narratives" : activeTab === "sources" ? "Enter a topic to analyze news sources" : "e.g. Artificial Intelligence, Global Economy...") : "Warming up AI vector models..."}
-              className="w-full pl-6 pr-32 py-4 bg-neutral-900/80 border border-neutral-800 rounded-2xl text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-lg shadow-xl backdrop-blur-sm disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={loading || !backendReady}
-            />
-            <button
-              type="submit"
-              disabled={loading || !query.trim() || !backendReady}
-              className="absolute right-2 px-6 py-2 bg-white text-black font-semibold rounded-xl hover:bg-neutral-200 transition-colors disabled:opacity-50 flex items-center gap-2 cursor-pointer"
-            >
-                {loading ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : (
-                "Search"
-              )}
-            </button>
+          <div className="w-full max-w-4xl mx-auto flex flex-col relative">
+            <div className="w-full flex items-center gap-3">
+              <form onSubmit={handleSearch} className="flex-1 relative animate-in fade-in duration-500">
+                <div className="relative flex items-center">
+                  <input
+                    type="text"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder={backendReady ? (activeTab === "global" ? "Enter a topic to explore global news narratives" : activeTab === "sources" ? "Enter a topic to analyze source diversity" : "e.g. Artificial Intelligence, Global Economy...") : "Warming up AI vector models..."}
+                    className="w-full pl-6 pr-32 py-4 bg-neutral-900/80 border border-neutral-800 rounded-2xl text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-lg shadow-xl backdrop-blur-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={loading || !backendReady}
+                  />
+                  <button
+                    type="submit"
+                    disabled={loading || !query.trim() || !backendReady}
+                    className="absolute right-2 px-6 py-2 bg-white text-black font-semibold rounded-xl hover:bg-neutral-200 transition-colors disabled:opacity-50 flex items-center gap-2 cursor-pointer"
+                  >
+                    {loading ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      "Search"
+                    )}
+                  </button>
+                </div>
+              </form>
+              <div className="relative">
+                <button 
+                  onClick={() => setShowSettings(!showSettings)}
+                  className={`flex-shrink-0 p-4 rounded-2xl border transition-all duration-300 shadow-xl backdrop-blur-sm ${showSettings ? 'bg-blue-600/20 border-blue-500 text-blue-400' : 'bg-neutral-900/80 border-neutral-800 text-neutral-500 hover:text-neutral-400 hover:bg-neutral-800/80'}`}
+                  title="Search Settings"
+                >
+                  <SlidersHorizontal className="w-6 h-6" />
+                </button>
+
+                {showSettings && (
+                  <div className="absolute right-0 top-full mt-3 w-52 bg-neutral-900/95 border border-neutral-800 rounded-2xl p-3 shadow-[0_20px_50px_rgba(0,0,0,0.5)] backdrop-blur-xl z-50 animate-in fade-in zoom-in-95 duration-200">
+                    <h4 className="text-[10px] font-bold text-neutral-500 uppercase tracking-[0.2em] mb-3 pb-2 border-b border-neutral-800/50">Search Settings</h4>
+                    <div className="flex flex-col gap-2">
+                      <label className="flex items-center justify-between cursor-pointer group">
+                        <span className="text-xs font-semibold text-neutral-300 group-hover:text-white transition-colors">Sentiment Analysis</span>
+                        <div className="relative">
+                          <input type="checkbox" className="sr-only" checked={useSentiment} onChange={(e) => setUseSentiment(e.target.checked)} />
+                          <div className={`block w-8 h-4.5 rounded-full border transition-colors ${useSentiment ? 'bg-blue-600/40 border-blue-500/50' : 'bg-neutral-950 border-neutral-800'}`}></div>
+                          <div className={`absolute left-1 top-1 w-2.5 h-2.5 rounded-full transition-transform ${useSentiment ? 'transform translate-x-3.5 bg-blue-200' : 'bg-neutral-600'}`}></div>
+                        </div>
+                      </label>
+                      <label className="flex items-center justify-between cursor-pointer group">
+                        <span className="text-xs font-semibold text-neutral-300 group-hover:text-white transition-colors">Full Article Bodies</span>
+                        <div className="relative">
+                          <input type="checkbox" className="sr-only" checked={includeBodies} onChange={(e) => setIncludeBodies(e.target.checked)} />
+                          <div className={`block w-8 h-4.5 rounded-full border transition-colors ${includeBodies ? 'bg-blue-600/40 border-blue-500/50' : 'bg-neutral-950 border-neutral-800'}`}></div>
+                          <div className={`absolute left-1 top-1 w-2.5 h-2.5 rounded-full transition-transform ${includeBodies ? 'transform translate-x-3.5 bg-blue-200' : 'bg-neutral-600'}`}></div>
+                        </div>
+                      </label>
+                      <label className="flex items-center justify-between cursor-pointer group">
+                        <span className="text-xs font-semibold text-neutral-300 group-hover:text-white transition-colors">Parameterize Query</span>
+                        <div className="relative">
+                          <input type="checkbox" className="sr-only" checked={parameterizeQuery} onChange={(e) => setParameterizeQuery(e.target.checked)} />
+                          <div className={`block w-8 h-4.5 rounded-full border transition-colors ${parameterizeQuery ? 'bg-blue-600/40 border-blue-500/50' : 'bg-neutral-950 border-neutral-800'}`}></div>
+                          <div className={`absolute left-1 top-1 w-2.5 h-2.5 rounded-full transition-transform ${parameterizeQuery ? 'transform translate-x-3.5 bg-blue-200' : 'bg-neutral-600'}`}></div>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
-        </form>
         )}
         
         {activeTab === "search" && articles.length > 0 && (
           <div className="mt-8 flex justify-center animate-in fade-in slide-in-from-bottom-4 duration-700">
             <button
-               onClick={() => router.push(`/cluster?q=${encodeURIComponent(searchedQuery)}&local=${localMode}`)}
+               onClick={() => router.push(`/cluster?q=${encodeURIComponent(searchedQuery)}&local=${localMode}&sentiment=${useSentiment}&bodies=${includeBodies}&parameterize=${parameterizeQuery}`)}
                className="px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold rounded-xl shadow-lg transition-transform hover:scale-105 flex items-center gap-2 cursor-pointer"
             >
                <BarChart2 className="w-5 h-5" />
@@ -539,13 +596,22 @@ export default function Home() {
                   <h3 className="text-lg font-semibold text-neutral-100 leading-tight">
                     {a.title}
                   </h3>
-                  <div className="flex-shrink-0 bg-neutral-800 border border-neutral-700 text-blue-400 text-xs font-bold px-2 py-1 rounded-md whitespace-nowrap shadow-sm">
+                  <div 
+                    className={`flex-shrink-0 border text-xs font-bold px-2 py-1 rounded-md whitespace-nowrap shadow-sm cursor-default ${a.match_score < 50 ? 'bg-red-900/30 border-red-500/50 text-red-400' : 'bg-neutral-800 border-neutral-700 text-blue-400'}`}
+                    title={a.match_score < 50 ? "Low match confidence. This may not be what you looked for." : undefined}
+                  >
                     {a.match_score}% Match
                   </div>
                 </div>
                 <p className="text-neutral-400 text-sm mb-3 line-clamp-3">
-                  {((a.body || "").trim() || "Full article text is available in the reader view.").slice(0, 300)}
-                  {(a.body || "").trim().length > 0 ? "..." : ""}
+                  {a.body && a.body.trim() ? (
+                    <>
+                      {a.body.trim().slice(0, 300)}
+                      {a.body.trim().length > 300 ? "..." : ""}
+                    </>
+                  ) : (
+                    <span className="italic text-neutral-500 font-medium">Full article text hidden. Available in reader view.</span>
+                  )}
                 </p>
                 <div className="flex justify-between items-center mt-auto">
                    <div className="text-xs text-neutral-500 uppercase flex flex-wrap items-center gap-2">
@@ -612,6 +678,30 @@ export default function Home() {
           </div>
         </div>
       )}
+      
+      {activeTab === "search" && articles.length === 0 && searchedQuery && !loading && (
+        <div className="z-10 w-full max-w-2xl mx-auto mt-20 flex flex-col items-center justify-center text-center animate-in fade-in zoom-in-95 duration-500">
+           <div className="p-10 bg-neutral-900/40 border border-neutral-800/50 rounded-[40px] backdrop-blur-2xl shadow-3xl relative overflow-hidden group">
+              <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <div className="relative z-10">
+                 <div className="w-20 h-20 bg-neutral-950 border border-neutral-800 rounded-3xl flex items-center justify-center mb-6 mx-auto shadow-inner">
+                    <SearchX className="w-10 h-10 text-neutral-600 group-hover:text-red-400/60 transition-colors duration-500" />
+                 </div>
+                 <h3 className="text-xl font-bold text-white mb-6">No high-confidence matches found.</h3>
+                 <div className="pt-6 border-t border-neutral-800/50 flex flex-col gap-2">
+                    <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">Suggestions</p>
+                    <ul className="text-xs text-neutral-500 space-y-1">
+                       <li>• Try a broader search query</li>
+                       <li>• Disable "Parameterize Query" in settings</li>
+                       <li>• Ensure "Local Mode" isn't restricting results</li>
+                    </ul>
+                 </div>
+              </div>
+           </div>
+        </div>
+      )}
+
+
 
       {activeTab === "recommended" && (
         <RecommendedDisplay
