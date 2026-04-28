@@ -155,7 +155,10 @@ def fetch_news(query: str, page_size: int = 50) -> List[Dict[str, Any]]:
         if articles:
             return articles
     except Exception as e:
-        print(f"[API] NewsAPI.ai failed: {e}")
+        if "NEWSAPI_AI_KEY" in str(e):
+            print(f"[API] NewsAPI.ai key missing; proceeding with fallbacks.")
+        else:
+            print(f"[API] NewsAPI.ai failed: {e}")
 
     # 2. Hybrid Fallback: RSS + Local DB
     # We don't import query_local_database here to avoid circular imports,
@@ -179,7 +182,7 @@ def fetch_newsapi_ai(query: str, page_size: int = 50) -> List[Dict[str, Any]]:
     to gracefully fall back or raise an exception to the frontend.
     """
     if not NEWS_API_AI_KEY:
-        raise ValueError("NEWSAPI_AI_KEY environment variable is not set. Please obtain a free developer key from newsapi.ai.")
+        return []
 
     payload = {
         "action": "getArticles",
@@ -267,7 +270,7 @@ def fetch_daily_gradient(page_size: int = 100) -> List[Dict[str, Any]]:
     Fetches the latest top headlines for the daily gradient via NewsAPI.ai.
     """
     if not NEWS_API_AI_KEY:
-        raise ValueError("NEWSAPI_AI_KEY environment variable is not set.")
+        return []
 
     payload = {
         "action": "getArticles",

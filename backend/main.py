@@ -68,12 +68,14 @@ class SearchRequest(BaseModel):
     force_local: Optional[bool] = False
     use_sentiment: Optional[bool] = False
     include_bodies: Optional[bool] = False
+    parameterize_query: Optional[bool] = False
 
 class ArticleRequest(BaseModel):
     query: str
     force_local: Optional[bool] = False
     use_sentiment: Optional[bool] = False
     include_bodies: Optional[bool] = False
+    parameterize_query: Optional[bool] = False
 
 
 def attach_article_sentiment(articles):
@@ -131,6 +133,25 @@ def run_article_feed(req: ArticleRequest):
             
         # Compute match percentages natively across all embeddings
         ranked_articles = compute_similarity_scores(req.query, articles)
+
+        # Strict quality filter: Always purge low-confidence matches (<30%)
+        ranked_articles = [a for a in ranked_articles if a.get("match_score", 0) >= 30]
+        
+        if getattr(req, "parameterize_query", False):
+            from ml import extract_query_parameters
+            params = extract_query_parameters(req.query)
+            if params["location"] or params["time"]:
+                filtered = []
+                for a in ranked_articles:
+                    text_to_search = (a.get("title", "") + " " + a.get("body", "")).lower()
+                    keep = True
+                    if params["location"] and params["location"].lower() not in text_to_search:
+                        keep = False
+                    if params["time"] and params["time"] not in a.get("publish_date", ""):
+                        keep = False
+                    if keep:
+                        filtered.append(a)
+                ranked_articles = filtered
         
         if req.use_sentiment:
             ranked_articles = attach_article_sentiment(ranked_articles)

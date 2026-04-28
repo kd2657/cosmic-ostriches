@@ -84,6 +84,7 @@ function ClusterContent() {
   const localParam = searchParams.get("local") === "true";
   const sentimentParam = searchParams.get("sentiment") === "true";
   const bodiesParam = searchParams.get("bodies") === "true";
+  const parameterizeParam = searchParams.get("parameterize") === "true";
   
   const [data, setData] = useState<any[]>([]);
   const [summaries, setSummaries] = useState<Record<string, {title: string, summary: string} | string>>({});
@@ -135,7 +136,8 @@ function ClusterContent() {
         dim_reduction: dimRed, 
         force_local: localParam,
         use_sentiment: sentimentParam,
-        include_bodies: bodiesParam
+        include_bodies: bodiesParam,
+        parameterize_query: parameterizeParam
       };
       if (k !== "") payload.k = k;
       

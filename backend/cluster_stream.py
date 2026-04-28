@@ -16,11 +16,12 @@ from ml import (
     _cluster_pipeline_lock,
     _get_cluster_labels,
     _get_reduced_embeddings,
-    _generate_narrative_summaries
+    _generate_narrative_summaries,
+    compute_similarity_scores
 )
 from google import genai
 
-async def stream_search_pipeline(query: str, algorithm: str, k: Optional[int], dim_reduction: str, force_local: bool, use_sentiment: bool = False, include_bodies: bool = False):
+async def stream_search_pipeline(query: str, algorithm: str, k: Optional[int], dim_reduction: str, force_local: bool, use_sentiment: bool = False, include_bodies: bool = False, parameterize_query: bool = False):
     """
     Generator that yields SSE-formatted events as it processes the search/clustering pipeline.
     """
@@ -55,6 +56,27 @@ async def stream_search_pipeline(query: str, algorithm: str, k: Optional[int], d
                 print(f"Streaming fetch error: {e}")
                 articles = query_local_database(query)
                 is_offline_cache = True
+                
+        if parameterize_query:
+            from ml import extract_query_parameters
+            params = extract_query_parameters(query)
+            if params["location"] or params["time"]:
+                filtered = []
+                for a in articles:
+                    text_to_search = (a.get("title", "") + " " + a.get("body", "")).lower()
+                    keep = True
+                    if params["location"] and params["location"].lower() not in text_to_search:
+                        keep = False
+                    if params["time"] and params["time"] not in a.get("publish_date", ""):
+                        keep = False
+                    if keep:
+                        filtered.append(a)
+                articles = filtered
+        
+        # Quality Filter: Compute Cross-Encoder scores and purge low-confidence results
+        if articles:
+            articles = compute_similarity_scores(query, articles)
+            articles = [a for a in articles if a.get("match_score", 0) >= 30]
         
         if not articles:
             yield f"data: {json.dumps({'event': 'error', 'data': 'No articles found for the given query.'})}\n\n"
