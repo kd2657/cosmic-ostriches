@@ -321,6 +321,8 @@ export default function Home() {
     if (!query.trim()) return;
 
     setLoading(true);
+    setArticles([]);
+    setSearchedQuery("");
     try {
       const res = await fetch("http://localhost:8000/api/articles", {
         method: "POST",
