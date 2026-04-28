@@ -1,27 +1,47 @@
 """
-Cluster Streaming Engine: Implementation of SSE-based narrative synthesis.
-Provides a generator to yield real-time progress events followed by the final data.
+Cluster Streaming Engine: SSE-based narrative synthesis pipeline.
+
+Provides a generator that yields real-time progress events followed by the final
+clustered data payload. Designed to be consumed by FastAPI's StreamingResponse.
 """
 
 import json
-import asyncio
 import os
+from typing import Any, Dict, List, Optional
+
+import asyncio
 import numpy as np
-from typing import List, Dict, Any, Optional
-from api import fetch_news
-from ml import (
-    vectorize_and_store, 
-    query_local_database, 
-    collection, 
-    _cluster_pipeline_lock,
-    _get_cluster_labels,
-    _get_reduced_embeddings,
-    _generate_narrative_summaries,
-    compute_similarity_scores
-)
 from google import genai
 
-async def stream_search_pipeline(query: str, algorithm: str, k: Optional[int], dim_reduction: str, force_local: bool, use_sentiment: bool = False, include_bodies: bool = False, parameterize_query: bool = False):
+from api import fetch_news
+from ml import (
+    _cluster_pipeline_lock,
+    _generate_narrative_summaries,
+    _get_cluster_labels,
+    _get_reduced_embeddings,
+    collection,
+    compute_similarity_scores,
+    extract_query_parameters,
+    query_local_database,
+    vectorize_and_store,
+)
+from models.metrics import (
+    compute_article_distances_from_center,
+    compute_clustering_eval_metrics,
+    compute_narrative_diversity_score,
+)
+
+
+async def stream_search_pipeline(
+    query: str,
+    algorithm: str,
+    k: Optional[int],
+    dim_reduction: str,
+    force_local: bool,
+    use_sentiment: bool = False,
+    include_bodies: bool = False,
+    parameterize_query: bool = False,
+):
     """
     Generator that yields SSE-formatted events as it processes the search/clustering pipeline.
     """
@@ -29,16 +49,14 @@ async def stream_search_pipeline(query: str, algorithm: str, k: Optional[int], d
         # Phase 1: News Fetching
         yield f"data: {json.dumps({'event': 'stage', 'data': {'stage': '📡 Fetching live news narratives', 'progress': 10}})}\n\n"
         await asyncio.sleep(0)
-        
+
         is_offline_cache = force_local
         if force_local:
             articles = query_local_database(query)
         else:
             try:
-                # 1. Fetch live news (Primary API -> RSS Fallback internally handled)
                 live_articles = fetch_news(query)
-                
-                # 2. Strict Fallback: Only use local DB if live fetch completely fails or is empty
+
                 if live_articles:
                     articles = live_articles
                 else:
@@ -48,7 +66,6 @@ async def stream_search_pipeline(query: str, algorithm: str, k: Optional[int], d
                 if live_articles:
                     yield f"data: {json.dumps({'event': 'stage', 'data': {'stage': '🧬 Embedding discourse vectors', 'progress': 25}})}\n\n"
                     await asyncio.sleep(0)
-                    # Vectorize & Store only the new live results
                     vectorize_and_store(live_articles)
                 else:
                     is_offline_cache = True
@@ -56,9 +73,8 @@ async def stream_search_pipeline(query: str, algorithm: str, k: Optional[int], d
                 print(f"Streaming fetch error: {e}")
                 articles = query_local_database(query)
                 is_offline_cache = True
-                
+
         if parameterize_query:
-            from ml import extract_query_parameters
             params = extract_query_parameters(query)
             if params["location"] or params["time"]:
                 filtered = []
@@ -72,12 +88,12 @@ async def stream_search_pipeline(query: str, algorithm: str, k: Optional[int], d
                     if keep:
                         filtered.append(a)
                 articles = filtered
-        
+
         # Quality Filter: Compute Cross-Encoder scores and purge low-confidence results
         if articles:
             articles = compute_similarity_scores(query, articles)
             articles = [a for a in articles if a.get("match_score", 0) >= 30]
-        
+
         if not articles:
             yield f"data: {json.dumps({'event': 'error', 'data': 'No articles found for the given query.'})}\n\n"
             await asyncio.sleep(0)
@@ -86,19 +102,18 @@ async def stream_search_pipeline(query: str, algorithm: str, k: Optional[int], d
         # Phase 2: Processing Embeddings
         yield f"data: {json.dumps({'event': 'stage', 'data': {'stage': '🔮 Computing structural clusters', 'progress': 50}})}\n\n"
         await asyncio.sleep(0)
-        
+
         ids = [a["id"] for a in articles]
         data = collection.get(ids=ids, include=["embeddings", "metadatas"])
-        
+
         if data.get("embeddings") is None or len(data["embeddings"]) == 0:
             yield f"data: {json.dumps({'event': 'error', 'data': 'Failed to retrieve vectors for narrative synthesis.'})}\n\n"
             await asyncio.sleep(0)
             return
-            
+
         embeddings = np.array(data["embeddings"])
-        
-        # Phase 3: Spatial Analysis & Synthesis
-        # This part is heavy, we wrap it in a lock for thread safety (matches ml.py)
+
+        # Phase 3: Spatial Analysis & Synthesis (lock protects UMAP/Numba thread safety)
         with _cluster_pipeline_lock:
             labels = _get_cluster_labels(embeddings, algorithm, k)
             reduced_embeddings = _get_reduced_embeddings(embeddings, dim_reduction)
@@ -106,25 +121,24 @@ async def stream_search_pipeline(query: str, algorithm: str, k: Optional[int], d
         yield f"data: {json.dumps({'event': 'stage', 'data': {'stage': '✨ Generating AI narrative synthesis', 'progress': 75}})}\n\n"
         await asyncio.sleep(0)
 
-        from models.metrics import compute_article_distances_from_center, compute_narrative_diversity_score, compute_clustering_eval_metrics
         article_distances = compute_article_distances_from_center(embeddings, np.array(labels))
-        
+
         results = []
-        cluster_texts = {}
+        cluster_texts: Dict[int, List[str]] = {}
         gemini_key = os.getenv("GEMINI_API_KEY")
         client = genai.Client(api_key=gemini_key) if gemini_key else None
-        
+
         for idx, article_id in enumerate(ids):
             meta = data["metadatas"][idx]
             cluster_id = int(labels[idx])
-            if cluster_id not in cluster_texts: cluster_texts[cluster_id] = []
-            
+            if cluster_id not in cluster_texts:
+                cluster_texts[cluster_id] = []
+
             t, b = meta.get("title", ""), meta.get("body", "")
             chunk = b[:2500] if client else b[:200]
             cluster_texts[cluster_id].append(f"{t}: {chunk}" if b else t)
-                
-            
-            result_item = {
+
+            result_item: Dict[str, Any] = {
                 "id": article_id,
                 "title": meta.get("title", "Unknown"),
                 "description": meta.get("description", ""),
@@ -134,20 +148,20 @@ async def stream_search_pipeline(query: str, algorithm: str, k: Optional[int], d
                 "cluster": cluster_id,
                 "x": float(reduced_embeddings[idx][0]),
                 "y": float(reduced_embeddings[idx][1]),
-                "distance_from_center": round(float(article_distances[idx]), 3) if cluster_id != -1 else 0.0
+                "distance_from_center": round(float(article_distances[idx]), 3) if cluster_id != -1 else 0.0,
             }
             if include_bodies:
                 result_item["body"] = meta.get("body", "")
             if use_sentiment and "sentiment" in meta:
                 result_item["sentiment"] = meta["sentiment"]
-                
+
             results.append(result_item)
-            
+
         target_clusters = [cid for cid in cluster_texts if cid != -1]
         summaries, used_local_fallback = _generate_narrative_summaries(cluster_texts, client, target_clusters)
         nds_scores = compute_narrative_diversity_score(embeddings, np.array(labels))
         eval_metrics = compute_clustering_eval_metrics(embeddings, np.array(labels), nds_scores)
-        
+
         # Phase 4: Yield Result
         final_data = {
             "points": results,
@@ -155,12 +169,12 @@ async def stream_search_pipeline(query: str, algorithm: str, k: Optional[int], d
             "nds_scores": nds_scores,
             "eval_metrics": eval_metrics,
             "is_local_summary": used_local_fallback,
-            "is_offline_cache": is_offline_cache
+            "is_offline_cache": is_offline_cache,
         }
-        
+
         yield f"data: {json.dumps({'event': 'result', 'data': final_data})}\n\n"
         await asyncio.sleep(0)
-        
+
     except Exception as e:
         print(f"STREAM FATAL ERROR: {e}")
         yield f"data: {json.dumps({'event': 'error', 'data': str(e)})}\n\n"

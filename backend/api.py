@@ -9,6 +9,10 @@ from typing import List, Dict, Any
 from functools import lru_cache
 from bs4 import BeautifulSoup
 
+from dotenv import load_dotenv
+
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+
 NEWS_API_AI_KEY = os.environ.get("NEWSAPI_AI_KEY", "")
 NEWS_API_AI_URL = "https://newsapi.ai/api/v1/article/getArticles"
 
