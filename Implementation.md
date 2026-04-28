@@ -1,6 +1,6 @@
 # Implementation Log: The Local Minima
 
-This document tracks the implementation strategy and all subsequent engineering changes for "The Local Minima." It covers Step 0 (Basic Interface), Step 1 (Core Narrative Explorer), and all enhancements made thereafter.
+This document tracks the technical implementation strategy and engineering evolution of "The Local Minima." Its primary purpose is to serve as a persistent record of features added, architectural shifts made, and technical debt resolved during the development lifecycle.
 
 ---
 
@@ -13,20 +13,21 @@ The architecture is decoupled into a frontend service and a backend service, bot
   ```text
   cosmic-ostriches/                # Repository Root
   ├── project-planning/            # Planning documents & research
-  ├── Implementation.md            # This file
+  ├── Implementation.md            # This file (Feature & Architecture Log)
   ├── start.sh                     # One-command bootstrapper
   ├── backend/                     # FastAPI Python application
   │   ├── .venv/                   # uv-managed virtual environment (git-ignored)
   │   ├── chroma_db/               # Local ChromaDB persistent vector storage
-  │   ├── main.py                  # FastAPI entry point & CORS orchestration
+  │   ├── main.py                  # FastAPI entry point (App Bootstrap)
   │   ├── api.py                   # NewsAPI.org fetching logic
-  │   ├── ml.py                    # Embedding, reduction, clustering & LLM pipeline
+  │   ├── ml/                      # ML Package (Clustering, Dim Reduction, etc.)
+  │   ├── routers/                 # FastAPI Router grouping (API Endpoints)
+  │   ├── models/                  # Internal Math & Metrics primitives
   │   └── requirements.txt         # Frozen PyPI dependencies
-  ├── frontend/                    # Next.js React application
-  │   ├── src/app/page.tsx         # Home/Search Page
-  │   ├── src/app/cluster/page.tsx # Clustering Visualization Page
-  │   └── package.json             # Node.js dependencies
-  └── prototyping/                 # Archive of earlier prototype work
+  └── frontend/                    # Next.js React application
+      ├── src/app/page.tsx         # Home/Search Page (Decoupled & Modular)
+      ├── src/components/          # Standalone UI Components
+      └── package.json             # Node.js dependencies
   ```
 
 ---
@@ -155,4 +156,37 @@ The heavy lifting will occur in the **FastAPI** backend using Python.
 - **Structured Gemini Narratives:** Refined the LLM summarization pipeline to return structured JSON objects. Gemini is now prompted to provide a short, descriptive title for each narrative and a strict 2-sentence summary: the first sentence captures the core theme, while the second sentence explicitly highlights what makes that narrative unique compared to others in the set.
 - **Interactive Isolation & Filtering:** Engineered a state-driven isolation mechanism using React hooks. Users can click any narrative header or Plotly legend item to "focus" on that specific cluster; this automatically dims all other plot points and hides unrelated summaries, allowing for deep-dive analytical reading without visual clutter.
 - **UI Resilience & Type Safety:** Added polymorphic type-handling to the frontend to gracefully handle different summary formats (structured objects from Gemini vs. flat strings from the local fallback model). Also resolved a race condition where React Strict Mode's double-rendering was inadvertently aborting the initial clustering fetch on page mount.
+
+### K. Article Recommender System (Personalized Discovery)
+
+- **Personalization Math:** Implemented a pure embedding-based ranking system that builds a "User Preference Vector" by averaging the high-dimensional vectors of articles the user has upvoted, while subtracting the vectors of downvoted articles.
+- **Cold Start Fallback:** For users with no voting history, the system defaults to a recency-weighted shuffle of current top stories to establish a baseline interest profile.
+- **Session-Persistence:** Integrated a lightweight browser-session cookie mechanism to track user interactions (likes/dislikes) across tabs without requiring a formal database-backed account system.
+
+### L. SourceLens Narrative Divergence System
+
+- **Narrative Framing Analysis:** Added a specialized "SourceLens" tab that analyzes the semantic divergence between different news outlets.
+- **Quantifying Narrative Shift:** Uses cross-article embedding distance math to calculate how far a specific publisher's coverage deviates from the "global median" narrative on a given topic.
+- **UI Interaction:** Provides a visual "Bias Sphere" where outlets are plotted based on their framing divergence, allowing users to visually spot outlier reporting and ideological framing shifts.
+
+### M. Phase 2: Deep Repository Cleanup & Structural Refactoring
+
+- **Architectural Hardening:** Performed a massive structural overhaul to ensure long-term maintainability and compliance with strict project modularity standards (keeping logical blocks focused and concise).
+- **Package Reorganization:**
+  - **Backend ML Package:** Refactored the monolithic `backend/ml.py` into a structured `backend/ml/` package, extracting domain-specific logic into specialized modules: `clustering.py`, `dimensionality.py`, `gradient.py`, and `global_metrics.py`.
+  - **FastAPI Routing:** Migrated all inline API routes from `main.py` into a dedicated `backend/routers/` directory, using FastApi `APIRouter` for clean endpoint grouping (`api_routes.py`, `exploration_routes.py`, `user_routes.py`).
+  - **Internal Models:** Moved the root-level `models/` directory into `backend/models/` to treat internal math primitives as a true sub-package, successfully eliminating all `sys.path.append('..')` structural hacks across the codebase.
+- **Frontend Componentization:** Modularized the oversized `frontend/src/app/page.tsx` by extracting the complex `BackgroundBlobs` (ambient physics) and `ArticleModal` (reader view) logic into standalone React components in `frontend/src/components/`.
+- **Import Audit & Cleanup:** Conducted a comprehensive audit of all project files to remove unused imports, ensure alphabetical ordering, and strictly eliminate redundant codeblocks, significantly reducing technical debt and improving developer onboarding clarity.
+
+### N. ModelManager & Async Initialization Pipeline
+
+- **7-Stage Boot Sequence:** Engineered a robust `ModelManager` singleton that orchestrates a multi-model background initialization. This allows the FastAPI server to start instantly and accept system status requests while heavy ML models load in the background.
+- **Heterogeneous Model Support:**
+  - **SentenceTransformers:** Local vectorization via `all-MiniLM-L6-v2`.
+  - **Summarization:** local T5-Small (`Falconsai/text_summarization`) fallback for offline narrative generation.
+  - **Sentiment Analysis:** Multi-label classification via a RoBERTa-based pipeline.
+  - **Cross-Encoder Ranking:** High-precision reranking using `ms-marco-MiniLM-L-6-v2` for the article recommender system.
+  - **NER Parameterization:** Integrated `bert-base-NER` to automatically extract entities for advanced query parameterization and bias analysis.
+- **Frontend Sync:** The `SystemBoot` and `SystemSplash` components poll a dedicated `/api/status` endpoint to provide granular progress tracking to the user, ensuring a transparent and premium "system-ready" experience.
 

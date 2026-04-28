@@ -9,48 +9,44 @@ A **News Narrative Explorer** that fetches, vectorizes, reduces, and dynamically
 
 ## ✨ Core Features
 
-*   **Live Cosine-Similarity Article Feed:** Searches are decoupled from clustering. Fetching a topic downloads live articles and performs a mathematical Cosine Similarity matrix check against the query, exposing exact "Match Percentage" scores before the user decides to cluster.
-*   **The Daily Gradient:** A dedicated daily intelligence tab that fetches the top 100 US headlines, utilizing custom from-scratch **Farthest Point Sampling (FPS)** and **Maximal Marginal Relevance (MMR)** algorithms to build an accordion UI of mathematically diverse global narratives without syndicated duplication.
-*   **Multi-Algorithm Narrative Clustering:** Translates the raw text of complex news into a 2D Plotly scatter plot by semantic closeness. Supports **HDBSCAN** (auto-detect), **K-Means** (custom from-scratch implementation), **GMM**, **Agglomerative**, and **Affinity Propagation**.
-*   **Flexible Dimensionality Reduction:** Choose between **UMAP** (global structure), **t-SNE** (local density), and **PCA** (custom from-scratch SVD implementation) for the 2D projection.
-*   **Hybrid AI Narrative Summaries:** Uses Google **Gemini 2.5 Flash** (free tier) to generate paragraph-length cluster summaries in a single batched API call. Gracefully falls back to a local `distilgpt2` pipeline if no key is configured or the quota is exhausted.
-*   **Offline Vector Caching & Local Search:** All fetched articles are persistently embedded and stored in a local **ChromaDB** database. A strict **"Local Mode" Switch** in the UI allows users to manually cut off network REST gathering and seamlessly map patterns exclusively across locally vectorized articles. If the NewsAPI quota is exhausted, the system automatically falls back to semantically searching the local cache — with a visible animated warning banner in the UI.
-*   **Media Publisher Source Mapping:** Lists the precise media outlets (e.g., *BBC News, Reuters*) comprising each narrative cluster for source-level transparency.
-*   **Backend-Ready UI Gating:** The search input is automatically disabled with a "Warming up AI vector models..." placeholder until the Python backend finishes loading its ML models — preventing premature fetch errors.
+*   **Live Cosine-Similarity Feed:** Real-time semantic relevance scoring for news articles using vector-space distance math.
+*   **The Daily Gradient:** A diverse intelligence tab utilizing custom **Farthest Point Sampling (FPS)** and **MMR** to surface unique global narratives.
+*   **Multi-Algorithm Clustering:** Interactive 2D mapping of news narratives supporting **HDBSCAN**, **K-Means**, **GMM**, and more.
+*   **Flexible Dimensionality Reduction:** Switch between **UMAP**, **t-SNE**, and a custom SVD-based **PCA** for semantic projection.
+*   **Hybrid AI Summaries:** Generates concise cluster narratives via **Gemini 2.5 Flash** with a robust local T5-based fallback.
+*   **Personalized Recommender:** A preference-driven ranking system that learns from user votes to surface tailored content.
+*   **SourceLens Divergence:** Quantitative framing analysis to detect and visualize ideological outliers across news publishers.
+*   **Offline Vector Resilience:** Persistent **ChromaDB** storage with "Local Mode" and automatic API fallback for disconnected exploration.
 
 ## 📁 Repository Structure
 
 ```text
 cosmic-ostriches/                # Project Root
 ├── project-planning/            # Planning Documents & Research
-├── Implementation.md            # Technical implementation log
+├── Implementation.md            # Technical implementation & Feature Log
 ├── start.sh                     # One-command application bootstrapper
 ├── backend/                     # Python FastAPI + ML Pipeline
 │   ├── .env                     # Local secrets (do NOT commit)
-│   ├── .env.example             # Template for required environment variables
-│   ├── .venv/                   # uv-managed virtual environment (git-ignored)
+│   ├── .venv/                   # uv-managed virtual environment
 │   ├── chroma_db/               # Local ChromaDB persistent vector storage
-│   ├── main.py                  # FastAPI endpoints & CORS orchestration
-│   ├── api.py                   # NewsAPI.org data retrieval
-│   ├── ml.py                    # Embedding, Reduction, Clustering & LLM Pipeline
+│   ├── main.py                  # FastAPI Application Entry Point
+│   ├── ml/                      # ML Package (Clustering, PCA, Gradient)
+│   ├── routers/                 # API Endpoint Routers
+│   ├── models/                  # Internal Math & Metrics package
 │   └── requirements.txt         # Frozen PyPI dependencies
 ├── frontend/                    # Next.js React Application
-│   ├── public/                  # Static assets
 │   ├── src/app/
-│   │   ├── page.tsx             # Home Page (Cosine Similarity Feed & Physics Engine)
-│   │   ├── globals.css          # Global styles
-│   │   ├── layout.tsx           # Next.js Application wrapper
-│   │   └── cluster/page.tsx     # Visual Clustering Dashboard (Plotly.js + AI Summaries)
-│   ├── package.json             # Node.js dependencies
-│   └── next.config.ts           # Next.js configuration
-└── prototyping/                 # Archive of earlier prototype work
+│   │   ├── page.tsx             # Home Page (Search & Recommendations)
+│   │   └── cluster/page.tsx     # Narrative Clustering Dashboard
+│   ├── src/components/          # Modular UI Components (Modals, Blobs)
+│   └── package.json             # Node.js dependencies
+└── README.md
 ```
 
 ## 🚀 How to Run
 
 ### Prerequisites (First-Time Setup)
 
-> [!IMPORTANT]
 > Complete these steps once before running for the first time.
 
 **1. Install system dependencies**
@@ -83,23 +79,23 @@ Then open `backend/.env` and fill in your keys (see table below).
 
 | Variable | Required | Where to get it |
 |---|---|---|
-| `NEWSAPI_KEY` | ✅ Yes | Free key at [newsapi.org](https://newsapi.org) |
-| `GEMINI_API_KEY` | ⚪ Optional | Free key at [aistudio.google.com](https://aistudio.google.com) — enables AI summaries |
+| `NEWSAPI_AI_KEY` | ✅ Yes | [newsapi.ai](https://newsapi.ai) — Main article engine |
+| `GEMINI_API_KEY` | ⚪ Optional | [aistudio.google.com](https://aistudio.google.com) — AI summaries |
+| `OPENAI_API_KEY` | ⚪ Optional | [platform.openai.com](https://platform.openai.com) — Secondary LLM fallback |
 
-> [!NOTE]
-> Without a `GEMINI_API_KEY`, the app still runs fully — it falls back to the local `distilgpt2` summarizer and shows a "Local Summary Only" badge.
+> Without a `GEMINI_API_KEY` or `OPENAI_API_KEY`, the app still runs fully — it falls back to the local `T5-Small` summarizer and shows a "Local Summary Only" badge.
 
 ---
 
 ### Running the App
 
-**The easy way (recommended):** Run both servers with a single command from the project root:
+**Quick Start (Recommended):** Run both servers with a single command from the project root:
 ```bash
 ./start.sh
 ```
 This loads your `.env`, activates the virtual environment, starts both servers simultaneously, and shuts them down cleanly on `Ctrl+C`.
 
-**The manual way** (if you prefer isolated terminals):
+**Manual Method** (requires 2 separate terminals):
 ```bash
 # Terminal 1 — Backend
 cd backend && source .venv/bin/activate && export $(grep -v '^#' .env | xargs) && uvicorn main:app --reload
@@ -108,6 +104,6 @@ cd backend && source .venv/bin/activate && export $(grep -v '^#' .env | xargs) &
 cd frontend && npm run dev
 ```
 
-Once both are running, open **http://localhost:3000** in your browser!
+Once both are running, open **http://localhost:3000** in your browser.
 
 ---

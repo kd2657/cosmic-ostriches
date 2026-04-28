@@ -1,8 +1,27 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Loader2, BarChart2, Compass, Layers, Database, WifiOff, Globe, Link as LinkIcon, Eye, BookOpenText, X, ExternalLink, ThumbsUp, ThumbsDown, ChevronDown, ChevronUp, SlidersHorizontal, SearchX, AlertCircle } from "lucide-react";
+import { 
+  Search, 
+  Loader2, 
+  BarChart2, 
+  Compass, 
+  Layers, 
+  Database, 
+  WifiOff, 
+  Globe, 
+  Link as LinkIcon, 
+  Eye, 
+  BookOpenText, 
+  ThumbsUp, 
+  ThumbsDown, 
+  ChevronDown, 
+  ChevronUp, 
+  SlidersHorizontal, 
+  SearchX, 
+  AlertCircle 
+} from "lucide-react";
 import DailyGradient from "@/components/DailyGradient";
 import GlobalMaxima from "@/components/GlobalMaxima";
 import SourceLens from "@/components/SourceLens";
@@ -10,6 +29,8 @@ import SystemSplash from "@/components/SystemSplash";
 import SystemBoot from "@/components/SystemBoot";
 import Tooltip from "@/components/Tooltip";
 import RecommendedDisplay from "@/components/RecommendedDisplay";
+import BackgroundBlobs from "@/components/BackgroundBlobs";
+import ArticleModal from "@/components/ArticleModal";
 
 // Set this to false to use the Terminal/Cyberpunk style bootup (SystemBoot)
 // ***************************
@@ -46,187 +67,7 @@ const sentimentBadgeStyles: Record<string, string> = {
 const getSentimentBadgeStyle = (sentiment: string) =>
   sentimentBadgeStyles[sentiment] ?? "bg-neutral-900/70 text-neutral-300 border-neutral-700";
 
-const formatTextIntoParagraphs = (text: string) => {
-  if (!text) return ["Content unavailable."];
 
-  if (text.includes("\\n")) {
-    return text.split("\\n").filter((p) => p.trim());
-  }
-
-  const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
-  const paragraphs: string[] = [];
-  let currentParagraph = "";
-
-  for (let i = 0; i < sentences.length; i++) {
-    currentParagraph += `${sentences[i]} `;
-    if ((i + 1) % 4 === 0 || i === sentences.length - 1) {
-      paragraphs.push(currentParagraph.trim());
-      currentParagraph = "";
-    }
-  }
-
-  return paragraphs;
-};
-
-function BackgroundBlobs() {
-  const blobRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const vectorRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const maskLayerRef = useRef<HTMLDivElement | null>(null);
-  const mouseRef = useRef({ x: 0, y: 0, active: false });
-
-  useEffect(() => {
-    // Safely configure window defaults inside the effect
-    mouseRef.current.x = window.innerWidth / 2;
-    mouseRef.current.y = window.innerHeight / 2;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      mouseRef.current = { x: e.clientX, y: e.clientY, active: true };
-    };
-    const handleMouseLeave = () => {
-      mouseRef.current.active = false;
-    };
-    
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseleave", handleMouseLeave);
-    window.addEventListener("blur", handleMouseLeave);
-    
-    let animationFrameId: number;
-    const blobs = [
-      { id: 1, color: "bg-blue-600/20",   cx: 0.2, cy: 0.2, r: 250, speed: 0.0010, offset: 0 },
-      { id: 2, color: "bg-purple-600/20", cx: 0.8, cy: 0.8, r: 350, speed: 0.0007, offset: 2 },
-      { id: 3, color: "bg-pink-600/20",   cx: 0.8, cy: 0.3, r: 200, speed: 0.0015, offset: 4 },
-      { id: 4, color: "bg-teal-600/20",   cx: 0.2, cy: 0.8, r: 250, speed: 0.0011, offset: 5 },
-      { id: 5, color: "bg-indigo-600/20", cx: 0.5, cy: 0.5, r: 400, speed: 0.0008, offset: 1 },
-    ];
-    const vectors = Array.from({ length: 40 }).map((_, i) => ({
-      id: i + 1,
-      cx: 0.05 + Math.random() * 0.9,
-      cy: 0.05 + Math.random() * 0.9,
-      speed: 0.0003 + Math.random() * 0.0005,
-      offset: Math.random() * Math.PI * 2,
-      text: `[${(Math.random() * 2 - 1).toFixed(3)}, ${(Math.random() * 2 - 1).toFixed(3)}]`
-    }));
-
-    vectorRefs.current.forEach((el, index) => {
-       if (el && vectors[index]) {
-          el.textContent = vectors[index].text;
-       }
-    });
-
-    const currentPositions = blobs.map(b => ({ x: b.cx * window.innerWidth, y: b.cy * window.innerHeight }));
-    const vectorPositions = vectors.map(v => ({ x: v.cx * window.innerWidth, y: v.cy * window.innerHeight }));
-    
-    let maskX = mouseRef.current.x;
-    let maskY = mouseRef.current.y;
-    let maskO = 0;
-
-    const animate = (time: number) => {
-      blobRefs.current.forEach((el, index) => {
-        if (!el) return;
-        const b = blobs[index];
-        const w = window.innerWidth;
-        const h = window.innerHeight;
-        
-        // Idle organic trigonometric floating trajectory
-        const floatX = (b.cx * w) + Math.sin(time * b.speed + b.offset) * 150;
-        const floatY = (b.cy * h) + Math.cos(time * b.speed + b.offset) * 150;
-        
-        let targetX = floatX;
-        let targetY = floatY;
-
-        // Dynamic Mathematical Mouse Repulsion Field (inverse distance pushing)
-        if (mouseRef.current.active) {
-          const dx = floatX - mouseRef.current.x;
-          const dy = floatY - mouseRef.current.y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          
-          if (dist < 450 && dist > 1) { 
-            const force = (450 - dist) / 450; 
-            const pushFactor = force * 350; // Massively aggressive distance curve away from mouse
-            targetX += (dx / dist) * pushFactor;
-            targetY += (dy / dist) * pushFactor;
-          }
-        }
-
-        // Apply smooth linear interpolation so they glide instead of teleporting
-        currentPositions[index].x += (targetX - currentPositions[index].x) * 0.04;
-        currentPositions[index].y += (targetY - currentPositions[index].y) * 0.04;
-        
-        // Send transform instructions universally relative to document dimensions. 
-        // Bypassing React's render loop saves critical frames!
-        el.style.transform = `translate(${currentPositions[index].x - b.r}px, ${currentPositions[index].y - b.r}px)`;
-      });
-
-      vectorRefs.current.forEach((el, index) => {
-        if (!el || !vectors[index]) return;
-        const v = vectors[index];
-        const w = window.innerWidth;
-        const h = window.innerHeight;
-        const floatX = (v.cx * w) + Math.sin(time * v.speed * 1.2 + v.offset) * 40;
-        const floatY = (v.cy * h) + Math.cos(time * v.speed * 1.2 + v.offset) * 40;
-        vectorPositions[index].x += (floatX - vectorPositions[index].x) * 0.02;
-        vectorPositions[index].y += (floatY - vectorPositions[index].y) * 0.02;
-        el.style.transform = `translate(${vectorPositions[index].x}px, ${vectorPositions[index].y}px)`;
-      });
-
-      maskX += (mouseRef.current.x - maskX) * 0.1;
-      maskY += (mouseRef.current.y - maskY) * 0.1;
-      maskO += ((mouseRef.current.active ? 1 : 0) - maskO) * 0.05;
-      
-      if (maskLayerRef.current) {
-        maskLayerRef.current.style.opacity = maskO.toString();
-        const maskGrad = `radial-gradient(circle 600px at ${maskX}px ${maskY}px, black 0%, transparent 100%)`;
-        maskLayerRef.current.style.setProperty('-webkit-mask-image', maskGrad);
-        maskLayerRef.current.style.setProperty('mask-image', maskGrad);
-      }
-
-      animationFrameId = requestAnimationFrame(animate);
-    };
-
-    animationFrameId = requestAnimationFrame(animate);
-    
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseleave", handleMouseLeave);
-      window.removeEventListener("blur", handleMouseLeave);
-      cancelAnimationFrame(animationFrameId);
-    };
-  }, []);
-
-  return (
-    <div className="fixed top-0 left-0 w-full h-full overflow-hidden z-0 pointer-events-none">
-      <div ref={maskLayerRef} className="absolute inset-0 z-10 pointer-events-none transition-opacity duration-300" style={{ opacity: 0 }}>
-         <div className="absolute inset-0 z-0 opacity-[0.08]" style={{ backgroundImage: 'linear-gradient(rgba(255, 255, 255, 1) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 1) 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
-         {Array.from({ length: 40 }).map((_, i) => (
-            <div
-              key={`vec-${i}`}
-              ref={(el) => {
-                if (el) vectorRefs.current[i] = el;
-              }}
-              className="absolute top-0 left-0 text-neutral-700/60 font-mono text-[10px] sm:text-xs tracking-widest whitespace-nowrap transition-none will-change-transform font-bold"
-            ></div>
-         ))}
-      </div>
-
-      {[
-        { id: 1, color: "bg-blue-600/20",   r: 250 },
-        { id: 2, color: "bg-purple-600/20", r: 350 },
-        { id: 3, color: "bg-pink-600/20",   r: 200 },
-        { id: 4, color: "bg-teal-600/20",   r: 250 },
-        { id: 5, color: "bg-indigo-600/20", r: 400 },
-      ].map((b, i) => (
-        <div 
-          key={b.id}
-          ref={(el) => {
-            if (el) blobRefs.current[i] = el;
-          }}
-          className={`absolute top-0 left-0 rounded-full blur-[100px] ${b.color} transition-none will-change-transform`}
-          style={{ width: b.r * 2, height: b.r * 2 }}
-        />
-      ))}
-    </div>
-  );
-}
 
 export default function Home() {
   const [query, setQuery] = useState("");
@@ -760,107 +601,13 @@ export default function Home() {
          </div>
       )}
 
-      {articleModalOpen && (
-        <div
-          className="fixed inset-0 z-[80] flex items-center justify-center px-4 py-6 sm:px-6"
-          onClick={closeArticleModal}
-        >
-          <div className="absolute inset-0 bg-neutral-950/35 backdrop-blur-[3px]" />
-          <div
-            className="relative z-10 flex h-[86vh] w-full max-w-4xl flex-col overflow-hidden rounded-[28px] border border-white/10 bg-neutral-950/88 shadow-[0_24px_120px_rgba(0,0,0,0.45)]"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="flex shrink-0 items-center justify-between gap-4 border-b border-white/10 bg-gradient-to-r from-neutral-950 via-neutral-900 to-neutral-950 px-5 py-4 sm:px-7">
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.28em] text-cyan-300/70">Article Reader</p>
-                <h2 className="mt-1 text-lg font-semibold text-white sm:text-xl">
-                  {selectedArticle?.title || "Loading article"}
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={closeArticleModal}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/5 text-neutral-300 transition-colors hover:bg-white/10 hover:text-white cursor-pointer"
-                aria-label="Close article reader"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="min-h-0 flex-1 overflow-hidden">
-              {articleLoading && (
-                <div className="flex h-full min-h-72 flex-col items-center justify-center px-5 py-5 text-center sm:px-7 sm:py-6">
-                  <Loader2 className="mb-4 h-10 w-10 animate-spin text-cyan-400" />
-                  <p className="text-sm text-neutral-400">Retrieving full article text...</p>
-                </div>
-              )}
-
-              {articleError && !articleLoading && (
-                <div className="px-5 py-5 sm:px-7 sm:py-6">
-                  <div className="rounded-2xl border border-red-900/70 bg-red-950/40 p-6 text-center">
-                    <p className="text-lg font-medium text-red-100">Error loading article</p>
-                    <p className="mt-2 text-sm text-red-300/80">{articleError}</p>
-                  </div>
-                </div>
-              )}
-
-              {selectedArticle && !articleLoading && !articleError && (
-                <div className="flex h-full min-h-0 flex-col animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div className="shrink-0 px-5 pb-4 pt-5 sm:px-7 sm:pb-5 sm:pt-6">
-                    <div className="mb-6 flex flex-wrap items-center gap-3">
-                      <span className="rounded-full border border-cyan-900/50 bg-cyan-900/25 px-3 py-1 text-xs font-bold uppercase tracking-widest text-cyan-300">
-                        {selectedArticle.source || "Unknown Source"}
-                      </span>
-                      {selectedArticle.publish_date && (
-                        <span className="text-sm text-neutral-500">
-                          {new Date(selectedArticle.publish_date).toLocaleDateString()}
-                        </span>
-                      )}
-                      {selectedArticle.sentiment && (
-                        <span className={`rounded-full border px-3 py-1 text-xs font-bold ${getSentimentBadgeStyle(selectedArticle.sentiment.sentiment)}`}>
-                          {selectedArticle.sentiment.label}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="min-h-0 flex-1 px-5 pb-4 sm:px-7">
-                    <div className="h-full overflow-y-auto overscroll-contain rounded-[24px] border border-white/8 bg-white/[0.03] p-5 [scrollbar-gutter:stable] sm:p-7">
-                      <div className="space-y-5 text-[15px] leading-8">
-                        {formatTextIntoParagraphs(
-                          selectedArticle.body || selectedArticle.description || "Content unavailable."
-                        ).map((paragraph, index) =>
-                          paragraph.trim() ? (
-                            <p key={index} className="text-neutral-300">
-                              {paragraph}
-                            </p>
-                          ) : null
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {selectedArticle.url && (
-                    <div className="shrink-0 border-t border-white/8 bg-neutral-950/95 px-5 py-4 sm:px-7">
-                      <div className="flex justify-end">
-                        <a
-                          href={selectedArticle.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/15 px-4 py-2 text-sm font-medium text-blue-200 transition-colors hover:bg-blue-500/25 hover:text-white"
-                        >
-                          Read Article
-                          <ExternalLink className="h-4 w-4" />
-                        </a>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <ArticleModal 
+        isOpen={articleModalOpen}
+        loading={articleLoading}
+        error={articleError}
+        article={selectedArticle}
+        onClose={closeArticleModal}
+      />
     </div>
     
   );
