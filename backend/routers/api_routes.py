@@ -50,7 +50,7 @@ def run_article_feed(req: ArticleRequest):
         # Strict quality filter: Always purge low-confidence matches (<30%)
         ranked_articles = [a for a in ranked_articles if a.get("match_score", 0) >= 30]
         
-        if req.parameterize_query:
+        if req.parameterize_query and ranked_articles:
             params = extract_query_parameters(req.query)
             if params["location"] or params["time"]:
                 filtered = []

@@ -177,17 +177,27 @@ def compute_similarity_scores(query: str, articles: List[Dict[str, Any]]) -> Lis
     articles.sort(key=lambda x: x["match_score"], reverse=True)
     return articles
 
-def extract_query_parameters(query: str) -> dict:
-    """
-    Uses NER and heuristics to extract location and time from a query.
-    """
+def extract_query_parameters(query: str) -> Dict[str, Optional[str]]:
+    if not query.strip():
+        return {"location": None, "time": None}
+
     ner_pipeline = model_manager.ner
-    entities = ner_pipeline(query) if ner_pipeline else []
+    entities = []
+    if ner_pipeline:
+        try:
+            print(f"[ML] Running NER on query: {query}")
+            entities = ner_pipeline(query)
+        except Exception as e:
+            print(f"[ML] NER extraction failed for query '{query}': {e}")
     
     locations = []
     for ent in entities:
-        if "LOC" in ent["entity_group"] or "LOC" in ent["entity"]:
-            locations.append(ent["word"].replace("##", ""))
+        # Robustly handle different NER output formats (entity_group vs entity)
+        label = ent.get("entity_group") or ent.get("entity") or ""
+        if "LOC" in label:
+            word = ent.get("word", "")
+            if word:
+                locations.append(word.replace("##", ""))
             
     time_keywords = ["today", "yesterday", "last week", "last month", "this week", "this month", "2023", "2024", "2025"]
     extracted_time = None
