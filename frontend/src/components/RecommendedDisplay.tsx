@@ -15,9 +15,10 @@ interface RecommendedDisplayProps {
   recommended: Article[];
   votes: Record<string, "up" | "down" | null>;
   handleVote: (articleId: string, vote: "up" | "down") => void;
+  error?: boolean;
 }
 
-export default function RecommendedDisplay({ recommended, votes, handleVote }: RecommendedDisplayProps) {
+export default function RecommendedDisplay({ recommended, votes, handleVote, error }: RecommendedDisplayProps) {
   return (
     <div className="z-10 w-full max-w-5xl mx-auto mt-12 space-y-4 pb-20 animate-in fade-in duration-500">
       <h2 className="text-2xl font-bold text-white mb-6 border-b border-neutral-800 pb-2 flex justify-between items-end">
@@ -27,7 +28,12 @@ export default function RecommendedDisplay({ recommended, votes, handleVote }: R
         </span>
       </h2>
 
-      {recommended.length === 0 ? (
+      {error ? (
+        <div className="bg-red-950/20 border border-red-900 rounded-xl p-6 text-center">
+          <p className="text-red-400 font-medium">Recommendations are currently unavailable.</p>
+          <p className="text-red-500/70 text-sm mt-1">Please try again later.</p>
+        </div>
+      ) : recommended.length === 0 ? (
         <p className="text-neutral-500 text-sm">No recommended articles</p>
       ) : (
         <div className="grid gap-4">

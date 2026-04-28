@@ -199,13 +199,17 @@ def fetch_newsapi_ai(query: str, page_size: int = 50) -> List[Dict[str, Any]]:
         "articleBodyLen": -1
     }
 
-    response = requests.post(NEWS_API_AI_URL, json=payload)
-    
-    if response.status_code != 200:
-        error_msg = response.json().get("error", "Unknown error from NewsAPI.ai")
-        raise Exception(f"NewsAPI.ai Error ({response.status_code}): {error_msg}")
+    try:
+        response = requests.post(NEWS_API_AI_URL, json=payload, timeout=10)
+        
+        if response.status_code != 200:
+            error_msg = response.json().get("error", "Unknown error from NewsAPI.ai")
+            raise Exception(f"NewsAPI.ai Error ({response.status_code}): {error_msg}")
 
-    data = response.json()
+        data = response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"[API] Network error when contacting NewsAPI.ai: {e}")
+        raise Exception(f"Failed to connect to NewsAPI.ai. The service might be down or timed out. Error: {e}")
     # Event Registry nests results in data['articles']['results']
     articles = data.get("articles", {}).get("results", [])
     
@@ -286,13 +290,17 @@ def fetch_daily_gradient(page_size: int = 100) -> List[Dict[str, Any]]:
         "articleBodyLen": -1
     }
 
-    response = requests.post(NEWS_API_AI_URL, json=payload)
-    
-    if response.status_code != 200:
-        error_msg = response.json().get("error", "Unknown error from NewsAPI.ai")
-        raise Exception(f"NewsAPI.ai Error ({response.status_code}): {error_msg}")
+    try:
+        response = requests.post(NEWS_API_AI_URL, json=payload, timeout=10)
+        
+        if response.status_code != 200:
+            error_msg = response.json().get("error", "Unknown error from NewsAPI.ai")
+            raise Exception(f"NewsAPI.ai Error ({response.status_code}): {error_msg}")
 
-    data = response.json()
+        data = response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"[API] Network error when contacting NewsAPI.ai for daily gradient: {e}")
+        raise Exception(f"Failed to connect to NewsAPI.ai for daily gradient. Error: {e}")
     articles = data.get("articles", {}).get("results", [])
     
     cleaned_articles = []

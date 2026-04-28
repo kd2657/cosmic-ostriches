@@ -249,6 +249,7 @@ export default function Home() {
   const [articleModalOpen, setArticleModalOpen] = useState(false);
   const [articleLoading, setArticleLoading] = useState(false);
   const [articleError, setArticleError] = useState("");
+  const [recommendError, setRecommendError] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -340,6 +341,7 @@ export default function Home() {
 
   const handleVote = async (articleId: string, vote: "up" | "down") => {
     let nextVote: "up" | "down" | null = vote;
+    const previousVote = votes[articleId];
 
     setVotes(prev => {
       const current = prev[articleId];
@@ -350,7 +352,7 @@ export default function Home() {
     });
 
     try {
-      await fetch("http://localhost:8000/api/vote", {
+      const res = await fetch("http://localhost:8000/api/vote", {
         credentials: "include",
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -359,24 +361,35 @@ export default function Home() {
           vote: nextVote
         })
       });
+      if (!res.ok) {
+        throw new Error("Failed to register vote");
+      }
       fetchRecommendations();
     } catch (err) {
       console.error("Vote failed", err);
+      // Rollback
+      setVotes(prev => ({ ...prev, [articleId]: previousVote }));
+      alert("Your vote could not be registered. Please try again.");
     }
   };
   const fetchRecommendations = useCallback(async () => {
     try {
+      setRecommendError(false);
       const res = await fetch("http://localhost:8000/api/recommend", {
         method: "GET",
         credentials: "include"
       });
 
-      if (!res.ok) return;
+      if (!res.ok) {
+        setRecommendError(true);
+        return;
+      }
 
       const json = await res.json();
       setRecommended(json.articles || []);
     } catch (err) {
       console.error("Recommendation fetch failed", err);
+      setRecommendError(true);
     }
   }, []);
 
@@ -708,6 +721,7 @@ export default function Home() {
           recommended={recommended}
           votes={votes}
           handleVote={handleVote}
+          error={recommendError}
         />
       )}
       {activeTab === "gradient" && <DailyGradient localMode={localMode} />}

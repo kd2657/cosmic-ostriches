@@ -335,7 +335,11 @@ def fetch_single_article(article_id: str):
     data = get_article_by_id(article_id)
     if not data:
         raise HTTPException(status_code=404, detail="Article not found")
-    attach_article_sentiment([data])
+    try:
+        attach_article_sentiment([data])
+    except Exception as e:
+        print(f"Failed to attach sentiment: {e}")
+        # Allow it to return without sentiment instead of crashing
     return {"status": "success", "article": data}
 @app.post("/api/vote")
 @log_request
@@ -347,7 +351,12 @@ def vote(payload: dict, request: Request, response: Response):
         raise HTTPException(status_code=400, detail="Invalid input")
 
     session_id = get_session_id(request, response)
-    record_vote(session_id, article_id, vote_type)
+    
+    try:
+        record_vote(session_id, article_id, vote_type)
+    except Exception as e:
+        print(f"Vote recording failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to register your vote. Please try again.")
 
     return {"status": "ok"}
 
@@ -386,27 +395,31 @@ def _get_recommendation_candidates(liked_articles: list) -> list:
 @app.get("/api/recommend")
 @log_request
 def recommend(request: Request, response: Response):
-    session_id = get_session_id(request, response)
-    liked, disliked = get_user_articles(session_id)
+    try:
+        session_id = get_session_id(request, response)
+        liked, disliked = get_user_articles(session_id)
 
-    # 1. Fetch Candidates
-    candidates = _get_recommendation_candidates(liked)
-    if not candidates:
-        return {"status": "success", "articles": []}
+        # 1. Fetch Candidates
+        candidates = _get_recommendation_candidates(liked)
+        if not candidates:
+            return {"status": "success", "articles": []}
 
-    # 2. Cold Start (no user data) — return recency-ordered candidates
-    if not liked:
-        return {"status": "success", "articles": candidates[:20]}
+        # 2. Cold Start (no user data) — return recency-ordered candidates
+        if not liked:
+            return {"status": "success", "articles": candidates[:20]}
 
-    # 3. Personalized Ranking — pure embedding similarity, no sentiment
-    ranked = rank_articles_for_user(
-        articles=candidates,
-        liked_articles=liked,
-        disliked_articles=disliked,
-        use_sentiment=False
-    )
+        # 3. Personalized Ranking — pure embedding similarity, no sentiment
+        ranked = rank_articles_for_user(
+            articles=candidates,
+            liked_articles=liked,
+            disliked_articles=disliked,
+            use_sentiment=False
+        )
 
-    return {"status": "success", "articles": ranked[:20]}
+        return {"status": "success", "articles": ranked[:20]}
+    except Exception as e:
+        print(f"Recommendation engine error: {e}")
+        raise HTTPException(status_code=500, detail="Recommendation engine is temporarily unavailable.")
 @app.post("/api/source-analysis")
 @log_request
 def run_source_analysis(req: SearchRequest):
