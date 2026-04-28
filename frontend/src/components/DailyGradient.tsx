@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Loader2, ChevronDown, ChevronUp, Link as LinkIcon, Compass } from "lucide-react";
+import { ChevronDown, ChevronUp, Link as LinkIcon, Compass } from "lucide-react";
 import MetricsOverlay from "./MetricsOverlay";
 
 export default function DailyGradient({ localMode = false }: { localMode?: boolean }) {
@@ -45,12 +45,33 @@ export default function DailyGradient({ localMode = false }: { localMode?: boole
   }, [localMode]);
 
   if (loading) {
-     return (
-       <div className="flex flex-col items-center py-20 z-10 relative">
-          <Loader2 className="w-10 h-10 animate-spin text-blue-500 mb-4" /> 
-          <p className="text-neutral-400 animate-pulse">Curating the Daily Gradient...</p>
-       </div>
-     );
+    return (
+      <div className="w-full max-w-5xl mx-auto z-10 relative mt-8 animate-in fade-in duration-500">
+        <div className="flex flex-col items-center text-center mb-8">
+          <Compass className="w-6 h-6 text-emerald-500 mb-3 animate-spin" style={{ animationDuration: "3s" }} />
+          <p className="text-neutral-500 text-sm animate-pulse">Curating the Daily Gradient...</p>
+        </div>
+        <div className="flex flex-col gap-6 pb-20">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="bg-neutral-900/60 border border-neutral-800 rounded-2xl p-6 overflow-hidden relative">
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.03] to-transparent -translate-x-full animate-[shimmer_2s_ease-in-out_infinite]" />
+              <div className="h-6 w-2/3 bg-neutral-800 rounded-md animate-pulse mb-4" />
+              <div className="space-y-2 mb-4">
+                <div className="h-4 w-full bg-neutral-800/50 rounded animate-pulse" />
+                <div className="h-4 w-5/6 bg-neutral-800/50 rounded animate-pulse" />
+              </div>
+              <div className="flex justify-between items-center">
+                <div className="flex gap-2">
+                  <div className="h-5 w-20 bg-neutral-800 rounded animate-pulse" />
+                  <div className="h-5 w-16 bg-indigo-950/60 rounded animate-pulse" />
+                </div>
+                <div className="h-5 w-24 bg-neutral-800/50 rounded-full animate-pulse" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   }
 
   if (error) {

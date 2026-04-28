@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { Loader2, Newspaper, Eye, ShieldAlert, BarChart3, AlertCircle } from "lucide-react";
+import { Newspaper, Eye, ShieldAlert, BarChart3, AlertCircle } from "lucide-react";
+import SourceLensLoading from "./SourceLensLoading";
 
 type ArticlePreview = {
   id: string;
@@ -101,17 +102,7 @@ export default function SourceLens({ query, localMode }: SourceLensProps) {
 
   if (!query) return null;
 
-  if (loading) {
-    return (
-      <div className="w-full flex flex-col items-center justify-center py-20 z-10 relative">
-         <Loader2 className="w-12 h-12 animate-spin text-purple-500 mb-6" /> 
-         <h3 className="text-xl font-bold text-white mb-2">Analyzing Source Divergence</h3>
-         <p className="text-neutral-400 animate-pulse text-sm max-w-md text-center">
-           Calculating vector space distances between individual news outlets and the global mean narrative...
-         </p>
-      </div>
-    );
-  }
+  if (loading) return <SourceLensLoading />;
 
   if (error) {
     return (
