@@ -555,7 +555,7 @@ export default function Home() {
         {activeTab === "search" && articles.length > 0 && (
           <div className="mt-8 flex justify-center animate-in fade-in slide-in-from-bottom-4 duration-700">
             <button
-               onClick={() => router.push(`/cluster?q=${encodeURIComponent(searchedQuery)}&local=${localMode}`)}
+               onClick={() => router.push(`/cluster?q=${encodeURIComponent(searchedQuery)}&local=${localMode}&sentiment=${useSentiment}&bodies=${includeBodies}`)}
                className="px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold rounded-xl shadow-lg transition-transform hover:scale-105 flex items-center gap-2 cursor-pointer"
             >
                <BarChart2 className="w-5 h-5" />

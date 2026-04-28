@@ -20,7 +20,7 @@ from ml import (
 )
 from google import genai
 
-async def stream_search_pipeline(query: str, algorithm: str, k: Optional[int], dim_reduction: str, force_local: bool):
+async def stream_search_pipeline(query: str, algorithm: str, k: Optional[int], dim_reduction: str, force_local: bool, use_sentiment: bool = False, include_bodies: bool = False):
     """
     Generator that yields SSE-formatted events as it processes the search/clustering pipeline.
     """
@@ -101,19 +101,25 @@ async def stream_search_pipeline(query: str, algorithm: str, k: Optional[int], d
             chunk = b[:2500] if client else b[:200]
             cluster_texts[cluster_id].append(f"{t}: {chunk}" if b else t)
                 
-            results.append({
+            
+            result_item = {
                 "id": article_id,
                 "title": meta.get("title", "Unknown"),
                 "description": meta.get("description", ""),
                 "url": meta.get("url", ""),
                 "source": meta.get("source", ""),
-                "body": meta.get("body", ""),
                 "publish_date": meta.get("publish_date", ""),
                 "cluster": cluster_id,
                 "x": float(reduced_embeddings[idx][0]),
                 "y": float(reduced_embeddings[idx][1]),
                 "distance_from_center": round(float(article_distances[idx]), 3) if cluster_id != -1 else 0.0
-            })
+            }
+            if include_bodies:
+                result_item["body"] = meta.get("body", "")
+            if use_sentiment and "sentiment" in meta:
+                result_item["sentiment"] = meta["sentiment"]
+                
+            results.append(result_item)
             
         target_clusters = [cid for cid in cluster_texts if cid != -1]
         summaries, used_local_fallback = _generate_narrative_summaries(cluster_texts, client, target_clusters)

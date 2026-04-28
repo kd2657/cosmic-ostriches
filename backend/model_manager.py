@@ -21,7 +21,7 @@ class ModelManager:
     STAGES = [
         {"id": "chroma", "label": "CONNECTING TO VECTOR DATABASE", "pct": 10},
         {"id": "vectorizer", "label": "LOADING SENTENCETRANSFORMER MODEL (all-MiniLM-L6-v2)", "pct": 35},
-        {"id": "summarizer", "label": "INITIALIZING NLP SUMMARIZATION PIPELINE (DistilGPT2)", "pct": 50},
+        {"id": "summarizer", "label": "INITIALIZING NLP SUMMARIZATION PIPELINE (Falconsai T5-Small)", "pct": 50},
         {"id": "sentiment", "label": "LOADING SENTIMENT ANALYSIS MODEL (Roberta)", "pct": 95},
         {"id": "ready", "label": "ALL SYSTEMS ONLINE // WELCOME TO THE LOCAL MINIMA", "pct": 100}
     ]
@@ -71,7 +71,11 @@ class ModelManager:
 
             # Stage 2: DistilGPT2 summarizer
             self._set_stage(2)
-            self.summarizer = pipeline("text-generation", model="distilgpt2")
+            from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+            self.summarizer = {
+                "model": AutoModelForSeq2SeqLM.from_pretrained("Falconsai/text_summarization"),
+                "tokenizer": AutoTokenizer.from_pretrained("Falconsai/text_summarization")
+            }
 
             # Stage 3: Sentiment Classifier
             self._set_stage(3)

@@ -375,12 +375,12 @@ def _generate_narrative_summaries(cluster_texts: Dict[int, List[str]], client: O
         used_local_fallback = True
         summarizer = _get_summarizer()
         for cid in target_clusters:
-            input_text = cluster_texts[cid][0][:100] if cluster_texts.get(cid) else "Global news."
-            prompt = f"Summarize the context: {input_text}"
+            input_text = cluster_texts[cid][0][:500] if cluster_texts.get(cid) else "Global news."
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                out = summarizer(prompt, max_new_tokens=25, temperature=0.3, do_sample=True, return_full_text=False, pad_token_id=50256)
-            generated = out[0]["generated_text"].strip().split("\n")[0]
+                inputs = summarizer["tokenizer"](f"summarize: {input_text}", return_tensors="pt", max_length=512, truncation=True)
+                outputs = summarizer["model"].generate(**inputs, max_length=60, min_length=10, do_sample=False)
+            generated = summarizer["tokenizer"].decode(outputs[0], skip_special_tokens=True).strip()
             summaries[str(cid)] = generated
 
     return summaries, used_local_fallback
