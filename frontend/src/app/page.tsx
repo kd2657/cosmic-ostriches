@@ -290,7 +290,7 @@ export default function Home() {
         </div>
       )}
 
-      <div className={`z-10 w-full max-w-5xl text-center space-y-8 transition-all duration-500 ${
+      <div className={`z-40 w-full max-w-5xl text-center space-y-8 transition-all duration-500 ${
         (activeTab === 'search' && articles.length > 0) || 
         (activeTab === 'global' && searchedQuery) || 
         (activeTab === 'sources' && searchedQuery) || 
@@ -355,7 +355,7 @@ export default function Home() {
         </div>
 
         {(activeTab === "search" || activeTab === "global" || activeTab === "sources") && (
-          <div className="w-full max-w-4xl mx-auto flex flex-col relative">
+          <div className="w-full max-w-4xl mx-auto flex flex-col relative z-30">
             <div className="w-full flex items-center gap-3">
               <form onSubmit={handleSearch} className="flex-1 relative animate-in fade-in duration-500">
                 <div className="relative flex items-center">
